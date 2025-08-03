@@ -34,7 +34,7 @@ let userIdCounter = 1;
 
 // --- Midtrans Snap Instance ---
 const snap = new midtransClient.Snap({
-    isProduction: false, // Set to true for production environment
+    isProduction: true, // Set to true for production environment
     serverKey: MIDTRANS_SERVER_KEY,
     clientKey: MIDTRANS_CLIENT_KEY
 });
