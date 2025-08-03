@@ -1,9 +1,12 @@
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { GoogleGenAI, Type } from "@google/genai";
+export {};
+
+// NOTE: The GoogleGenAI import has been removed from the client-side code.
 
 // TypeScript type augmentation for Midtrans Snap.js
 declare global {
@@ -76,9 +79,8 @@ let base64ImageData: string | null = null;
 let userPersona: 'creator' | 'casual' | null = null;
 let currentUser: User | null = null;
 let isLoginMode = true; // For login/register modal
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY! });
 let midtransClientKey: string | null = null;
-const API_BASE_URL = 'http://localhost:3000';
+const API_BASE_URL = ''; // Now served from same origin
 
 
 // --- Type Definitions ---
@@ -206,7 +208,6 @@ async function handleAuthSubmit(event: Event) {
             });
             const regData = await regResponse.json();
             if (!regResponse.ok) throw new Error(regData.error || 'Gagal mendaftar.');
-            // After successful registration, automatically log them in
         }
         
         // Login
@@ -501,171 +502,59 @@ async function handleAnalyzeClick() {
     loaderContainer.classList.remove('hidden');
     resultsContainer.classList.add('hidden');
     errorContainer.classList.add('hidden');
-    
+
     const theme = themeInput.value.trim();
+    loaderText.textContent = theme ? "MEMBUAT BACKGROUND & MENGANALISIS..." : "MENGANALISIS KONTEN...";
 
     try {
-        if (theme) {
-            if (!currentUser.is_premium) {
-                 showError("Background AI kustom adalah fitur Premium. Silakan upgrade.");
-                 loaderContainer.classList.add('hidden');
-                 imagePreviewContainer.classList.remove('hidden');
-                 openSubscriptionModal();
-                 return;
-            }
-            loaderText.textContent = "MEMBUAT BACKGROUND AI...";
-            await generateAndSetBackground(theme);
-        }
-        
-        loaderText.textContent = "MENGANALISIS KONTEN...";
-        const imageDataOnly = base64ImageData.split(',')[1];
-        const results = await callGeminiAPI(imageDataOnly, userPersona, theme);
-        
-        if (!results || (Array.isArray(results) && results.length === 0)) {
-           throw new Error("Respons AI tidak valid atau kosong. Coba lagi.");
+        if (theme && !currentUser.is_premium) {
+            showError("Background AI kustom adalah fitur Premium. Silakan upgrade.");
+            loaderContainer.classList.add('hidden');
+            imagePreviewContainer.classList.remove('hidden');
+            openSubscriptionModal();
+            return;
         }
 
-        displayResults(results);
-        await addToHistory(base64ImageData, results, userPersona);
+        const payload = { base64ImageData, persona: userPersona, theme };
+
+        const response = await fetchWithAuth(`${API_BASE_URL}/api/analyze`, {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.error || "Gagal mendapatkan respons dari server.");
+        }
+
+        const { analysis, background } = await response.json();
+
+        if (background) {
+            const img = document.createElement('img');
+            img.src = background;
+            img.onload = () => {
+                backgroundImageContainer.innerHTML = '';
+                backgroundImageContainer.appendChild(img);
+                setTimeout(() => img.classList.add('loaded'), 50);
+            };
+        }
+
+        if (!analysis || (Array.isArray(analysis) && analysis.length === 0)) {
+            throw new Error("Respons AI tidak valid atau kosong. Coba lagi.");
+        }
+
+        displayResults(analysis);
+        await addToHistory(base64ImageData, analysis, userPersona);
         loaderContainer.classList.add('hidden');
         resultsContainer.classList.remove('hidden');
 
     } catch (error: any) {
         console.error("Error during analysis:", error);
-        showError(error.message || "Terjadi kesalahan saat menghubungi AI.");
+        showError(error.message || "Terjadi kesalahan saat menghubungi server AI.");
         loaderContainer.classList.add('hidden');
         imagePreviewContainer.classList.remove('hidden');
     }
 }
-
-// --- API Calls (Gemini) ---
-
-async function generateAndSetBackground(theme: string) {
-    try {
-        const response = await ai.models.generateImages({
-            model: 'imagen-3.0-generate-002',
-            prompt: `cinematic, high resolution, photorealistic background: ${theme}`,
-            config: {
-              numberOfImages: 1,
-              outputMimeType: 'image/jpeg',
-              aspectRatio: '16:9', 
-            },
-        });
-        
-        const base64ImageBytes = response.generatedImages[0].image.imageBytes;
-        const imageUrl = `data:image/jpeg;base64,${base64ImageBytes}`;
-        
-        const img = document.createElement('img');
-        img.src = imageUrl;
-        img.onload = () => {
-           backgroundImageContainer.innerHTML = '';
-           backgroundImageContainer.appendChild(img);
-           setTimeout(() => img.classList.add('loaded'), 50);
-        };
-        
-    } catch (error) {
-        console.error("Gagal membuat background:", error);
-    }
-}
-
-async function callGeminiAPI(imageData: string, persona: 'creator' | 'casual', theme?: string): Promise<CreatorResult[] | CasualResult[]> {
-    let systemInstruction = "";
-    let responseSchema: any;
-    
-    const themeInstruction = theme ? `\nSANGAT PENTING: Sesuaikan semua rekomendasi (caption, hashtag, lagu) dengan tema yang diberikan pengguna: "${theme}".` : "";
-
-    if (persona === 'creator') {
-        systemInstruction = `Anda adalah seorang ahli strategi SEO dan media sosial. Analisis gambar ini secara mendalam.
-1.  **Buat Caption SEO-Friendly:** Tulis caption deskriptif (sekitar 20-30 kata) yang natural, memasukkan keyword relevan, dan diakhiri dengan ajakan (call-to-action).
-2.  **Buat Alt Text:** Tulis deskripsi Alt Text yang jelas dan ringkas.
-3.  **Riset Hashtag:** Berikan 2 set hashtag: 5 hashtag 'umum' dengan volume tinggi, dan 5 hashtag 'spesifik' yang lebih niche.
-4.  **Pilih Lagu:** Rekomendasikan SATU lagu yang sedang viral atau sangat populer di TikTok/Reels saat ini yang nuansanya sangat cocok dengan gambar. Prioritaskan lagu yang dikenal luas.` + themeInstruction;
-        responseSchema = {
-            type: Type.OBJECT,
-            properties: {
-                seoCaption: { type: Type.STRING, description: 'Caption SEO-friendly yang deskriptif.' },
-                altText: { type: Type.STRING, description: 'Alt text yang jelas untuk aksesibilitas.' },
-                hashtags: {
-                    type: Type.OBJECT,
-                    properties: {
-                        umum: { type: Type.ARRAY, items: { type: Type.STRING }, description: "5 hashtag umum bervolume tinggi." },
-                        spesifik: { type: Type.ARRAY, items: { type: Type.STRING }, description: "5 hashtag spesifik yang niche." }
-                    }
-                },
-                song: {
-                    type: Type.OBJECT,
-                    properties: {
-                        title: { type: Type.STRING },
-                        artist: { type: Type.STRING }
-                    },
-                    required: ["title", "artist"]
-                }
-            },
-            required: ["seoCaption", "altText", "hashtags", "song"]
-        };
-    } else { // casual
-        systemInstruction = `Anda adalah orang yang ada di dalam foto ini. Anda sedang membuat postingan untuk media sosial Anda sendiri. Kepribadian Anda adalah Gen Z: keren, ekspressif, dan seringkali reflektif. Gaya bicaramu santai, campur-campur bahasa Indonesia dan Inggris.
-
-Analisis gambar ini dari sudut pandang PERTAMA (first-person). Rasakan vibe, ekspresi, dan lingkunganmu di dalam foto. Berdasarkan itu, berikan LIMA ide konten yang berbeda.
-
-ATURAN WAJIB, HARUS DIPATUHI:
-1.  **POV & Caption:** Kamu ADALAH subjek di foto. Semua caption harus dari sudut pandangmu (menggunakan kata seperti "gue", "aku", "I", "my"). Caption WAJIB SUPER SINGKAT (MAKSIMAL 5 KATA). Ini adalah pikiran atau celetukan spontanmu saat itu.
-    *   Contoh baik: "Lagi nikmatin momen.", "Feeling this vibe.", "Lost in my own world.", "Gak tau, lagi random aja.", "Details matter."
-    *   Contoh BURUK (JANGAN DILAKUKAN): "Foto ini menunjukkan seseorang...", "Kamu kelihatan keren, bro.", "Angle fotonya bagus."
-2.  **Mood:** Ini adalah nama vibe atau perasaanmu saat foto itu diambil. Harus kreatif dan slang.
-    *   Contoh: 'Main Character Moment', 'Deep Thoughts Only', 'Aesthetic State of Mind', 'Lagi Nge-chill Parah', 'Spontaneous Click'.
-3.  **LARANGAN:** Dilarang keras bertingkah seperti AI yang menganalisis. Dilarang mengomentari "orang di foto". Kamu ADALAH orang itu. Jangan formal.
-4.  **Hashtags & Lagu:** Hashtag (2-3) harus singkat dan mendukung mood-mu. Lagu HARUS viral atau populer di TikTok/Reels dan benar-benar cocok dengan perasaanmu di foto.
-${themeInstruction}`;
-        responseSchema = {
-            type: Type.ARRAY,
-            items: {
-                type: Type.OBJECT,
-                properties: {
-                    mood: { type: Type.STRING, description: "Nama vibe/perasaanmu di foto (contoh: 'Main Character Moment', 'Aesthetic State of Mind')." },
-                    caption: { type: Type.STRING, description: "Caption SUPER singkat (maks 5 kata) dari sudut pandang orang pertama." },
-                    hashtags: { type: Type.ARRAY, items: { type: Type.STRING }, description: "2-3 hashtag singkat yang relevan dengan mood." },
-                    song: {
-                        type: Type.OBJECT,
-                        properties: {
-                            title: { type: Type.STRING },
-                            artist: { type: Type.STRING }
-                        },
-                        required: ["title", "artist"]
-                    }
-                },
-                required: ["mood", "caption", "hashtags", "song"]
-            }
-        };
-    }
-
-    const imagePart = {
-      inlineData: {
-        mimeType: 'image/jpeg',
-        data: imageData,
-      },
-    };
-
-    const textPart = {
-        text: "Analisis gambar ini dan berikan rekomendasi konten berdasarkan instruksi kepribadian yang sudah ditetapkan."
-    };
-
-    const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: { parts: [textPart, imagePart] },
-        config: {
-            systemInstruction: systemInstruction,
-            responseMimeType: "application/json",
-            responseSchema: responseSchema,
-        },
-    });
-
-    const jsonText = response.text.trim();
-    const parsedJson = JSON.parse(jsonText);
-    
-    return Array.isArray(parsedJson) ? parsedJson : [parsedJson];
-}
-
 
 // --- UI Rendering ---
 
@@ -680,7 +569,7 @@ function copyToClipboard(textToCopy: string, buttonElement: HTMLButtonElement) {
         console.error('Gagal menyalin teks: ', err);
     });
 }
-(window as any).copyToClipboard = copyToClipboard;
+window.copyToClipboard = copyToClipboard;
 
 function displayResults(results: CreatorResult[] | CasualResult[], currentPersona = userPersona) {
     resultsGrid.innerHTML = '';
@@ -805,8 +694,6 @@ function buildResultCardsHTML(results: CreatorResult[] | CasualResult[], persona
 // --- History Management ---
 
 async function addToHistory(imageDataUrl: string, resultData: CreatorResult[] | CasualResult[], persona: 'creator' | 'casual') {
-    // History is a premium feature, so only premium users can save it.
-    // The server will enforce this, but we can prevent the request from being sent.
     if (!currentUser?.is_premium) return;
     
     try {
@@ -825,7 +712,6 @@ async function addToHistory(imageDataUrl: string, resultData: CreatorResult[] | 
         if (!response.ok) {
             const errorData = await response.json();
             console.error("Gagal menyimpan riwayat:", errorData.error);
-            // Optionally, show a non-blocking error to the user
         }
 
     } catch (error) {

@@ -10,6 +10,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const midtransClient = require('midtrans-client');
 const path = require('path');
+const { GoogleGenAI, Type } = require('@google/genai');
 require('dotenv').config();
 
 const app = express();
@@ -23,6 +24,7 @@ app.use(express.json({ limit: '10mb' }));
 const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY || 'YOUR_MIDTRANS_SERVER_KEY';
 const MIDTRANS_CLIENT_KEY = process.env.MIDTRANS_CLIENT_KEY || 'YOUR_MIDTRANS_CLIENT_KEY';
 const JWT_SECRET_KEY = process.env.JWT_SECRET_KEY || 'default-secret-key-for-development-should-be-changed';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const SALT_ROUNDS = 10;
 
 // --- In-Memory Database (for demonstration) ---
@@ -36,6 +38,15 @@ const snap = new midtransClient.Snap({
     serverKey: MIDTRANS_SERVER_KEY,
     clientKey: MIDTRANS_CLIENT_KEY
 });
+
+// --- Google AI Instance ---
+let ai;
+if (GEMINI_API_KEY) {
+    ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+} else {
+    console.warn('--- WARNING: GEMINI_API_KEY is not set in the .env file. AI features will be disabled. ---');
+}
+
 
 // --- Authentication Middleware ---
 const authenticateToken = (req, res, next) => {
@@ -133,6 +144,87 @@ app.get('/api/me', authenticateToken, (req, res) => {
     const { password, ...userData } = user;
     res.json(userData);
 });
+
+// POST /api/analyze - Main endpoint for AI analysis and background generation
+app.post('/api/analyze', authenticateToken, async (req, res) => {
+    if (!ai) {
+        return res.status(500).json({ error: 'Layanan AI tidak dikonfigurasi di server.' });
+    }
+
+    try {
+        const { base64ImageData, persona, theme } = req.body;
+        const userRecord = users.find(u => u.id === req.user.id);
+
+        if (!userRecord) {
+            return res.status(404).json({ error: 'Pengguna tidak ditemukan.' });
+        }
+        if (!base64ImageData || !persona) {
+            return res.status(400).json({ error: 'Data gambar dan persona diperlukan.' });
+        }
+
+        let backgroundImageUrl = null;
+        if (theme && userRecord.is_premium) {
+            try {
+                const imageResponse = await ai.models.generateImages({
+                    model: 'imagen-3.0-generate-002',
+                    prompt: `cinematic, high resolution, photorealistic background: ${theme}`,
+                    config: {
+                      numberOfImages: 1,
+                      outputMimeType: 'image/jpeg',
+                      aspectRatio: '16:9',
+                    },
+                });
+                const base64ImageBytes = imageResponse.generatedImages[0].image.imageBytes;
+                backgroundImageUrl = `data:image/jpeg;base64,${base64ImageBytes}`;
+            } catch (error) {
+                console.error("Gagal membuat background AI:", error);
+            }
+        }
+        
+        let systemInstruction = "";
+        let responseSchema;
+        const imageData = base64ImageData.split(',')[1];
+        const themeInstruction = theme ? `\nSANGAT PENTING: Sesuaikan semua rekomendasi (caption, hashtag, lagu) dengan tema yang diberikan pengguna: "${theme}".` : "";
+
+        if (persona === 'creator') {
+            systemInstruction = `Anda adalah seorang ahli strategi SEO dan media sosial. Analisis gambar ini secara mendalam.
+1.  **Buat Caption SEO-Friendly:** Tulis caption deskriptif (sekitar 20-30 kata) yang natural, memasukkan keyword relevan, dan diakhiri dengan ajakan (call-to-action).
+2.  **Buat Alt Text:** Tulis deskripsi Alt Text yang jelas dan ringkas.
+3.  **Riset Hashtag:** Berikan 2 set hashtag: 5 hashtag 'umum' dengan volume tinggi, dan 5 hashtag 'spesifik' yang lebih niche.
+4.  **Pilih Lagu:** Rekomendasikan SATU lagu yang sedang viral atau sangat populer di TikTok/Reels saat ini yang nuansanya sangat cocok dengan gambar. Prioritaskan lagu yang dikenal luas.` + themeInstruction;
+            responseSchema = { type: Type.OBJECT, properties: { seoCaption: { type: Type.STRING }, altText: { type: Type.STRING }, hashtags: { type: Type.OBJECT, properties: { umum: { type: Type.ARRAY, items: { type: Type.STRING } }, spesifik: { type: Type.ARRAY, items: { type: Type.STRING } } } }, song: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, artist: { type: Type.STRING } }, required: ["title", "artist"] } }, required: ["seoCaption", "altText", "hashtags", "song"] };
+        } else { // casual
+            systemInstruction = `Anda adalah orang yang ada di dalam foto ini. Anda sedang membuat postingan untuk media sosial Anda sendiri. Kepribadian Anda adalah Gen Z: keren, ekspressif, dan seringkali reflektif. Gaya bicaramu santai, campur-campur bahasa Indonesia dan Inggris.
+Analisis gambar ini dari sudut pandang PERTAMA (first-person). Rasakan vibe, ekspresi, dan lingkunganmu di dalam foto. Berdasarkan itu, berikan LIMA ide konten yang berbeda.
+ATURAN WAJIB, HARUS DIPATUHI:
+1.  **POV & Caption:** Kamu ADALAH subjek di foto. Semua caption harus dari sudut pandangmu (menggunakan kata seperti "gue", "aku", "I", "my"). Caption WAJIB SUPER SINGKAT (MAKSIMAL 5 KATA).
+2.  **Mood:** Ini adalah nama vibe atau perasaanmu saat foto itu diambil. Harus kreatif dan slang.
+3.  **LARANGAN:** Dilarang keras bertingkah seperti AI yang menganalisis. Dilarang mengomentari "orang di foto". Kamu ADALAH orang itu.
+4.  **Hashtags & Lagu:** Hashtag (2-3) harus singkat dan mendukung mood-mu. Lagu HARUS viral atau populer di TikTok/Reels dan benar-benar cocok dengan perasaanmu di foto.
+${themeInstruction}`;
+            responseSchema = { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { mood: { type: Type.STRING }, caption: { type: Type.STRING }, hashtags: { type: Type.ARRAY, items: { type: Type.STRING } }, song: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, artist: { type: Type.STRING } }, required: ["title", "artist"] } }, required: ["mood", "caption", "hashtags", "song"] } };
+        }
+
+        const imagePart = { inlineData: { mimeType: 'image/jpeg', data: imageData } };
+        const textPart = { text: "Analisis gambar ini dan berikan rekomendasi konten." };
+
+        const analysisResponse = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: { parts: [textPart, imagePart] },
+            config: { systemInstruction: systemInstruction, responseMimeType: "application/json", responseSchema: responseSchema },
+        });
+
+        const jsonText = analysisResponse.text.trim();
+        const parsedJson = JSON.parse(jsonText);
+        const analysisResult = Array.isArray(parsedJson) ? parsedJson : [parsedJson];
+
+        res.json({ analysis: analysisResult, background: backgroundImageUrl });
+    } catch (error) {
+        console.error("Error in /api/analyze:", error);
+        res.status(500).json({ error: 'Gagal menganalisis konten.' });
+    }
+});
+
 
 // POST /api/create-transaction - Initiate a payment with Midtrans
 app.post('/api/create-transaction', authenticateToken, async (req, res) => {
@@ -243,5 +335,8 @@ app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
     if (MIDTRANS_SERVER_KEY.startsWith('YOUR_') || JWT_SECRET_KEY.startsWith('default-')) {
         console.warn('--- WARNING: Server is using default development keys. Set credentials in a .env file for production. ---');
+    }
+    if(!GEMINI_API_KEY) {
+        console.warn('--- WARNING: GEMINI_API_KEY is not set. AI features will not work. ---');
     }
 });
