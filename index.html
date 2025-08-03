@@ -77,7 +77,7 @@
             </div>
             <!-- Mobile menu button -->
             <div class="md:hidden">
-                <button class="text-text-primary">
+                <button id="mobileMenuButton" class="text-text-primary">
                     <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
                 </button>
             </div>
@@ -263,6 +263,10 @@
         
     </main>
 
+    <footer class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 text-center text-text-muted text-sm relative z-10">
+        <p>&copy; 2025 Celetuk. All Rights Reserved | Designed & Built by Cecioray</p>
+    </footer>
+
     <!-- Login/Register Modal -->
     <div id="loginModal" class="hidden modal-overlay">
         <div class="modal-content futuristic-card p-8 rounded-2xl text-left max-w-sm w-full relative">
@@ -329,6 +333,28 @@
             </button>
             <div id="historyDetailContent" class="max-h-[80vh] overflow-y-auto">
                 <!-- Detailed history content will be injected here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Menu Overlay -->
+    <div id="mobileMenu" class="hidden fixed inset-0 bg-background/90 backdrop-blur-lg z-50 flex flex-col items-center justify-center p-8">
+        <button id="closeMobileMenuButton" class="absolute top-6 right-6 text-text-muted hover:text-text-primary">
+            <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+        </button>
+        
+        <nav class="flex flex-col items-center space-y-8 text-2xl font-semibold text-text-primary">
+            <a href="#" class="mobile-nav-link hover:text-accent transition-colors" data-page="page-home">Home</a>
+            <a href="#" class="mobile-nav-link hover:text-accent transition-colors" data-page="page-fitur">Features</a>
+            <a href="#" class="mobile-nav-link hover:text-accent transition-colors" data-page="page-harga">Pricing</a>
+            <a href="#" id="mobileHistoryNavButton" class="mobile-nav-link hover:text-accent transition-colors hidden" data-page="page-riwayat">Riwayat</a>
+        </nav>
+
+        <div class="mt-12 w-full max-w-xs text-center">
+            <button id="mobileLoginButton" class="hidden btn-primary w-full text-lg">Login</button>
+            <div id="mobileUserProfile" class="hidden">
+                 <p id="mobileUserEmail" class="font-medium text-text-primary mb-4"></p>
+                 <button id="mobileLogoutButton" class="btn-secondary w-full">Logout</button>
             </div>
         </div>
     </div>

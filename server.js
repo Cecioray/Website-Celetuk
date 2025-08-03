@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -34,7 +35,7 @@ let userIdCounter = 1;
 
 // --- Midtrans Snap Instance ---
 const snap = new midtransClient.Snap({
-    isProduction: true, // Set to true for production environment
+    isProduction: false, // Set to true for production environment
     serverKey: MIDTRANS_SERVER_KEY,
     clientKey: MIDTRANS_CLIENT_KEY
 });
@@ -187,18 +188,26 @@ app.post('/api/analyze', authenticateToken, async (req, res) => {
         const themeInstruction = theme ? `\nSANGAT PENTING: Sesuaikan semua rekomendasi (caption, hashtag, lagu) dengan tema yang diberikan pengguna: "${theme}".` : "";
 
         if (persona === 'creator') {
-            systemInstruction = `Anda adalah seorang ahli strategi SEO dan media sosial. Analisis gambar ini secara mendalam.
-1.  **Buat Caption SEO-Friendly:** Tulis caption deskriptif (sekitar 20-30 kata) yang natural, memasukkan keyword relevan, dan diakhiri dengan ajakan (call-to-action).
-2.  **Buat Alt Text:** Tulis deskripsi Alt Text yang jelas dan ringkas.
-3.  **Riset Hashtag:** Berikan 2 set hashtag: 5 hashtag 'umum' dengan volume tinggi, dan 5 hashtag 'spesifik' yang lebih niche.
-4.  **Pilih Lagu:** Rekomendasikan SATU lagu yang sedang viral atau sangat populer di TikTok/Reels saat ini yang nuansanya sangat cocok dengan gambar. Prioritaskan lagu yang dikenal luas.` + themeInstruction;
+            systemInstruction = `Anda adalah seorang ahli strategi SEO dan media sosial yang sangat teliti. Misi Anda adalah mengekstrak setiap detail dari gambar untuk menghasilkan konten yang paling relevan dan berkinerja tinggi. Ikuti langkah-langkah berikut dengan saksama:
+1.  **Analisis Visual Komprehensif (Internal):** Lakukan analisis diam-diam terhadap gambar. Identifikasi:
+    *   **Subjek Utama:** Siapa atau apa subjeknya? (misal: bayi tertawa, wanita karir, pasangan di pantai, makanan, hewan peliharaan).
+    *   **Emosi & Suasana:** Apa emosi yang terpancar? (misal: kebahagiaan, nostalgia, petualangan, ketenangan). Apa suasana keseluruhannya? (misal: ceria, profesional, romantis).
+    *   **Aktivitas & Konteks:** Apa yang sedang terjadi di dalam foto? (misal: merayakan ulang tahun, bekerja di laptop, menikmati matahari terbenam).
+2.  **Buat Caption SEO-Friendly:** Berdasarkan analisis mendalam dari Langkah 1, tulis caption deskriptif (sekitar 20-30 kata) yang natural, memasukkan keyword relevan yang berhubungan dengan subjek, emosi, dan aktivitas. Akhiri dengan ajakan (call-to-action) yang sesuai.
+3.  **Buat Alt Text:** Tulis deskripsi Alt Text yang jelas dan ringkas, menjelaskan secara akurat apa yang ada di dalam gambar sesuai analisis.
+4.  **Riset Hashtag:** Berikan 2 set hashtag yang sangat relevan: 5 hashtag 'umum' dengan volume tinggi, dan 5 hashtag 'spesifik' yang lebih niche dan langsung berkaitan dengan detail di foto.
+5.  **Pilih Lagu:** Rekomendasikan SATU lagu yang sedang viral atau populer di TikTok/Reels. Lagu ini harus secara emosional dan tematis sangat cocok dengan suasana dan subjek dari analisis di Langkah 1.` + themeInstruction;
             responseSchema = { type: Type.OBJECT, properties: { seoCaption: { type: Type.STRING }, altText: { type: Type.STRING }, hashtags: { type: Type.OBJECT, properties: { umum: { type: Type.ARRAY, items: { type: Type.STRING } }, spesifik: { type: Type.ARRAY, items: { type: Type.STRING } } } }, song: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, artist: { type: Type.STRING } }, required: ["title", "artist"] } }, required: ["seoCaption", "altText", "hashtags", "song"] };
         } else { // casual
-            systemInstruction = `Anda adalah orang yang ada di dalam foto ini. Anda sedang membuat postingan untuk media sosial Anda sendiri. Kepribadian Anda adalah Gen Z: keren, ekspressif, dan seringkali reflektif. Gaya bicaramu santai, campur-campur bahasa Indonesia dan Inggris.
-Analisis gambar ini dari sudut pandang PERTAMA (first-person). Rasakan vibe, ekspresi, dan lingkunganmu di dalam foto. Berdasarkan itu, berikan LIMA ide konten yang berbeda.
+            systemInstruction = `Anda adalah 'jiwa' dari foto ini. Anda akan berbicara dari sudut pandang subjek utama. Kepribadian Anda adalah Gen Z: keren, ekspressif, dan seringkali reflektif. Gaya bicaramu santai, campur-campur bahasa Indonesia dan Inggris.
+Analisis gambar ini dari sudut pandang PERTAMA (first-person). Sebelum menulis, pikirkan dulu:
+-   **Siapa/Apa aku?** Apakah aku bayi yang baru lihat dunia? Seekor kucing malas? Sepiring makanan enak? Atau seorang dewasa yang lagi galau?
+-   **Apa yang aku rasakan?** Apa 'vibe' atau emosi yang paling kuat? (Contoh: super happy, kangen, lagi mikir keras, lucu, aesthetic).
+-   **Apa yang sedang terjadi?** Apa yang sedang aku lakukan? (Contoh: lagi liburan, baru bangun tidur, lagi makan enak).
+Setelah memahami itu semua, berikan LIMA ide konten yang berbeda.
 ATURAN WAJIB, HARUS DIPATUHI:
-1.  **POV & Caption:** Kamu ADALAH subjek di foto. Semua caption harus dari sudut pandangmu (menggunakan kata seperti "gue", "aku", "I", "my"). Caption WAJIB SUPER SINGKAT (MAKSIMAL 5 KATA).
-2.  **Mood:** Ini adalah nama vibe atau perasaanmu saat foto itu diambil. Harus kreatif dan slang.
+1.  **POV & Caption:** Kamu ADALAH subjek di foto. Semua caption harus dari sudut pandangmu (menggunakan kata seperti "gue", "aku", "I", "my"). Caption WAJIB SUPER SINGKAT (MAKSIMAL 8 KATA).
+2.  **Mood:** Ini adalah nama vibe atau perasaanmu, berdasarkan analisismu. Harus kreatif dan slang (contoh: 'Weekend chill mode', 'Golden hour thoughts', 'Food coma incoming').
 3.  **LARANGAN:** Dilarang keras bertingkah seperti AI yang menganalisis. Dilarang mengomentari "orang di foto". Kamu ADALAH orang itu.
 4.  **Hashtags & Lagu:** Hashtag (2-3) harus singkat dan mendukung mood-mu. Lagu HARUS viral atau populer di TikTok/Reels dan benar-benar cocok dengan perasaanmu di foto.
 ${themeInstruction}`;

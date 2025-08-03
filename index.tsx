@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -72,6 +73,17 @@ const historyEmptyState = document.getElementById('historyEmptyState') as HTMLEl
 const historyDetailModal = document.getElementById('historyDetailModal') as HTMLElement;
 const closeHistoryDetailModalButton = document.getElementById('closeHistoryDetailModalButton') as HTMLButtonElement;
 const historyDetailContent = document.getElementById('historyDetailContent') as HTMLElement;
+
+// --- Mobile Menu Selectors ---
+const mobileMenuButton = document.getElementById('mobileMenuButton') as HTMLButtonElement;
+const mobileMenu = document.getElementById('mobileMenu') as HTMLElement;
+const closeMobileMenuButton = document.getElementById('closeMobileMenuButton') as HTMLButtonElement;
+const mobileNavLinks = document.querySelectorAll('.mobile-nav-link') as NodeListOf<HTMLAnchorElement>;
+const mobileHistoryNavButton = document.getElementById('mobileHistoryNavButton') as HTMLAnchorElement;
+const mobileLoginButton = document.getElementById('mobileLoginButton') as HTMLButtonElement;
+const mobileUserProfile = document.getElementById('mobileUserProfile') as HTMLElement;
+const mobileUserEmail = document.getElementById('mobileUserEmail') as HTMLParagraphElement;
+const mobileLogoutButton = document.getElementById('mobileLogoutButton') as HTMLButtonElement;
 
 
 // --- State Variables ---
@@ -295,20 +307,32 @@ function showError(message: string) {
 
 function updateUserUI() {
     if (currentUser) {
+        // Desktop
         loginNavButton.classList.add('hidden');
         userProfile.classList.remove('hidden');
         userEmailSpan.textContent = currentUser.email;
         historyNavButton.classList.remove('hidden');
+        
+        // Mobile
+        mobileLoginButton.classList.add('hidden');
+        mobileUserProfile.classList.remove('hidden');
+        mobileUserEmail.textContent = currentUser.email;
     } else {
+        // Desktop
         loginNavButton.classList.remove('hidden');
         userProfile.classList.add('hidden');
         historyNavButton.classList.add('hidden');
+        
+        // Mobile
+        mobileLoginButton.classList.remove('hidden');
+        mobileUserProfile.classList.add('hidden');
+        mobileHistoryNavButton.classList.add('hidden');
     }
     updatePremiumUI();
 }
 
 
-// --- Modal Handling (Login, Subscription, History) ---
+// --- Modal Handling (Login, Subscription, History, Mobile Menu) ---
 
 function openLoginModal() {
     loginModal.classList.remove('hidden');
@@ -346,6 +370,17 @@ function closeSubscriptionModal() {
         initiatePaymentButton.innerHTML = "Langganan Sekarang";
     }, 300); 
 }
+
+function openMobileMenu() {
+    mobileMenu.classList.remove('hidden');
+    mobileMenu.classList.add('fade-in');
+}
+
+function closeMobileMenu() {
+    mobileMenu.classList.add('hidden');
+    mobileMenu.classList.remove('fade-in');
+}
+
 
 // --- Subscription and Payment ---
 
@@ -430,6 +465,7 @@ function updatePremiumUI() {
         upgradeButtonPricing.textContent = "Anda Sudah Premium";
         upgradeButtonPricing.disabled = true;
         historyNavButton.classList.remove('hidden'); // Show history for premium
+        mobileHistoryNavButton.classList.remove('hidden'); // Show mobile history for premium
     } else {
         premiumTags.forEach(tag => (tag as HTMLElement).style.display = 'inline-block');
         if (themeInputContainer) themeInputContainer.classList.add('disabled-feature');
@@ -437,6 +473,7 @@ function updatePremiumUI() {
         upgradeButtonPricing.textContent = "Upgrade ke Premium";
         upgradeButtonPricing.disabled = false;
         historyNavButton.classList.add('hidden'); // Hide history for non-premium
+        mobileHistoryNavButton.classList.add('hidden'); // Hide mobile history for non-premium
     }
 }
 
@@ -867,6 +904,33 @@ async function init() {
 
     // History listeners
     closeHistoryDetailModalButton.addEventListener('click', closeHistoryDetailModal);
+
+    // Mobile Menu listeners
+    mobileMenuButton.addEventListener('click', openMobileMenu);
+    closeMobileMenuButton.addEventListener('click', closeMobileMenu);
+
+    mobileNavLinks.forEach(link => {
+        link.addEventListener('click', (event) => {
+            event.preventDefault();
+            const pageId = link.dataset.page;
+            if (pageId) {
+                if (pageId === 'page-home') resetUI();
+                showPage(pageId);
+                closeMobileMenu();
+            }
+        });
+    });
+    
+    mobileLoginButton.addEventListener('click', () => {
+        openLoginModal();
+        closeMobileMenu();
+    });
+
+    mobileLogoutButton.addEventListener('click', () => {
+        handleLogout();
+        closeMobileMenu();
+    });
+
 
     // Initial UI state
     showPage('page-home');
