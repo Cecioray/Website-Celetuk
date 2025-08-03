@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Celetuk - Asisten Konten AI</title>
+    <meta name="description" content="Generate viral captions, hashtags, and song recommendations for your photos with a powerful AI assistant.">
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    
+    <link rel="stylesheet" href="index.css">
+    
+    <!-- Midtrans Snap.js Script (Client Key akan di-set secara dinamis via JS) -->
+    <script type="text/javascript"
+      src="https://app.midtrans.com/snap/snap.js"></script> 
+
+    <script type="importmap">
+        { "imports": { "@google/genai": "https://esm.sh/@google/genai" } }
+    </script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        logo: ['Playfair Display', 'serif'],
+                    },
+                    colors: {
+                        'background': '#0B1120',
+                        'text-primary': '#E5E7EB',
+                        'text-muted': '#9CA3AF',
+                        'accent': '#38BDF8',
+                        'accent-secondary': '#F472B6',
+                        'accent-light': '#7DD3FC',
+                    }
+                }
+            }
+        }
+    </script>
+<link rel="stylesheet" href="/index.css">
+</head>
+<body class="font-sans">
+    <div id="backgroundImageContainer"></div>
+
+    <!-- Header -->
+    <header class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 z-20 relative">
+        <nav class="flex justify-between items-center">
+            <a href="#" class="nav-link flex items-center cursor-pointer" data-page="page-home">
+                 <span id="logo-text" class="font-logo text-4xl font-bold text-text-primary">Celetuk</span>
+            </a>
+            <div class="hidden md:flex items-center space-x-10 text-lg text-text-muted">
+                <a href="#" class="nav-link hover:text-accent transition-colors" data-page="page-home">Home</a>
+                <a href="#" class="nav-link hover:text-accent transition-colors" data-page="page-fitur">Features</a>
+                <a href="#" class="nav-link hover:text-accent transition-colors" data-page="page-harga">Pricing</a>
+                <a href="#" id="historyNavButton" class="nav-link hover:text-accent transition-colors hidden" data-page="page-riwayat">Riwayat</a>
+            </div>
+            <div class="hidden md:flex items-center">
+                 <button id="loginNavButton" class="text-lg font-bold text-background bg-accent px-6 py-2 rounded-lg hover:opacity-80 transition">
+                    Login
+                </button>
+                <div id="userProfile" class="hidden relative">
+                    <button id="userProfileButton" class="flex items-center space-x-2">
+                        <span id="userEmail" class="font-medium text-text-primary"></span>
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-text-muted" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                    </button>
+                    <div id="userDropdown" class="hidden absolute right-0 mt-2 w-48 bg-slate-800 rounded-md shadow-lg py-1 z-50 futuristic-card">
+                        <a href="#" id="logoutButton" class="block px-4 py-2 text-sm text-text-muted hover:bg-slate-700">Logout</a>
+                    </div>
+                </div>
+            </div>
+            <!-- Mobile menu button -->
+            <div class="md:hidden">
+                <button class="text-text-primary">
+                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
+                </button>
+            </div>
+        </nav>
+    </header>
+
+    <main class="min-h-screen flex flex-col items-center justify-center text-center px-4 pt-12 pb-12 relative z-10">
+        
+        <!-- Page: Home (The App) -->
+        <div id="page-home" class="page-content w-full max-w-7xl mx-auto">
+             <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center">
+                <!-- Left Column: Intro -->
+                <div class="text-center lg:text-left relative">
+                    <div class="relative z-10">
+                        <h1 class="text-5xl md:text-6xl lg:text-7xl font-bold font-logo leading-tight text-slate-100">Satu Foto, <br><span class="text-gradient">Ratusan Ide.</span></h1>
+                        <p class="mt-6 text-lg text-slate-300 max-w-xl mx-auto lg:mx-0">Bosan menatap layar, mencari ide caption? Celetuk adalah co-pilot kreatifmu. Upload foto, dan biarkan AI memberikanmu caption jenaka, hashtag yang trending, dan rekomendasi lagu yang pas dalam sekejap.</p>
+                        
+                        <div class="mt-8 space-y-4 text-slate-400 max-w-md mx-auto lg:mx-0">
+                            <div class="flex items-center justify-center lg:justify-start gap-3">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                <span>Caption <strong>Cerdas & Jenaka</strong></span>
+                            </div>
+                            <div class="flex items-center justify-center lg:justify-start gap-3">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                <span>Hashtag <strong>Spesifik & Umum</strong></span>
+                            </div>
+                            <div class="flex items-center justify-center lg:justify-start gap-3">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                <span>Rekomendasi <strong>Lagu Viral</strong></span>
+                            </div>
+                            <div class="flex items-center justify-center lg:justify-start gap-3">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
+                                <span>Background <strong>AI Kustom</strong></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
+                <!-- Right Column: The App -->
+                <div class="futuristic-card p-6 md:p-8 rounded-3xl w-full">
+                     <!-- This container holds both persona selection and the main app interface -->
+                    <div id="appContainer" class="w-full">
+                        <!-- Persona Selection -->
+                        <div id="personaContainer" class="space-y-4 fade-in">
+                            <h2 class="text-2xl md:text-3xl font-bold font-sans leading-tight text-text-primary text-center">Pilih Gayamu</h2>
+                            <p class="text-base text-text-muted max-w-xl mx-auto text-center">Pilihanmu akan mengkalibrasi AI untuk hasil terbaik.</p>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                                <button data-persona="casual" class="btn-persona text-left p-5 futuristic-card rounded-2xl transition-all duration-300">
+                                    <h3 class="font-bold text-lg text-text-primary">Mode Santai</h3>
+                                    <p class="text-sm text-text-muted">Celetukan jenaka.</p>
+                                </button>
+                                <button data-persona="creator" class="btn-persona text-left p-5 futuristic-card rounded-2xl transition-all duration-300 relative">
+                                    <div class="absolute top-2 right-2 bg-yellow-400 text-yellow-900 text-xs font-bold px-2 py-1 rounded-full premium-tag">PRO</div>
+                                    <h3 class="font-bold text-lg text-text-primary">Mode Kreator</h3>
+                                    <p class="text-sm text-text-muted">Caption cerdas & SEO.</p>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Main App Interface (hidden initially) -->
+                        <div id="mainAppInterface" class="hidden space-y-6 w-full">
+                            <!-- Theme Input -->
+                            <div id="themeInputContainer">
+                                <label for="theme-input" class="block text-sm font-medium text-text-muted mb-2 text-left">1. (Opsional) Deskripsikan tema untuk background AI <span class="premium-feature-badge">(Premium)</span></label>
+                                <input type="text" id="theme-input" placeholder="Contoh: Hutan berkabut di pagi hari" class="w-full bg-slate-900/30 border border-slate-700 rounded-lg p-3 text-text-primary placeholder-text-muted focus:border-accent focus:ring-0 outline-none transition-colors">
+                            </div>
+
+                            <!-- Upload Area -->
+                            <div id="uploadContainer">
+                                <label for="file-upload" class="relative flex flex-col items-center justify-center w-full h-56 border-2 border-accent/30 border-dashed rounded-2xl cursor-pointer bg-slate-900/20 hover:bg-slate-900/40 hover:border-accent/50 transition-colors">
+                                    <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                                        <p class="mb-2 text-sm font-semibold text-text-muted">2. Upload Fotomu</p>
+                                        <svg class="w-10 h-10 mb-3 text-accent/50" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-4-4V7a4 4 0 014-4h2l2-2h6l2 2h2a4 4 0 014 4v5a4 4 0 01-4 4H7z"></path><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                                        <p class="text-sm text-text-muted"><span class="font-semibold text-accent">Klik untuk upload</span> atau seret file</p>
+                                        <p class="text-xs text-text-muted/50">PNG, JPG, atau WEBP</p>
+                                    </div>
+                                    <input id="file-upload" type="file" class="hidden" accept="image/png, image/jpeg, image/webp" />
+                                </label>
+                            </div>
+                            
+                             <!-- Image Preview & Analyze Button -->
+                            <div id="imagePreviewContainer" class="hidden text-center space-y-4">
+                                <img id="imagePreview" src="#" alt="Image Preview" class="max-h-64 w-auto mx-auto rounded-lg shadow-lg border-2 border-slate-700/50">
+                                <button id="analyzeButton" class="btn-primary text-lg">
+                                    Analisis Foto Ini
+                                </button>
+                            </div>
+                            
+                             <!-- Loading Indicator -->
+                            <div id="loaderContainer" class="hidden flex flex-col items-center justify-center space-y-4 pt-10">
+                                <div class="loader"></div>
+                                <p id="loaderText" class="text-text-muted mt-4 tracking-widest">MENGANALISIS...</p>
+                            </div>
+                            
+                            <!-- Error Message -->
+                            <div id="errorContainer" class="hidden bg-red-900/50 border border-red-500 text-red-300 px-4 py-3 rounded-lg text-center">
+                                <p id="errorMessage"></p>
+                            </div>
+                             <!-- Results Grid -->
+                            <div id="resultsContainer" class="hidden space-y-6 pt-4">
+                                <div id="resultsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <!-- Result cards will be injected here -->
+                                </div>
+                                <div id="creatorResultCard" class="hidden">
+                                    <!-- Creator result will be injected here -->
+                                </div>
+                                <button id="resetButton" class="btn-secondary">
+                                    Coba Foto Lain
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Page: Features -->
+        <div id="page-fitur" class="page-content hidden w-full max-w-4xl mx-auto fade-in relative">
+            <h1 class="text-4xl md:text-5xl font-bold font-logo leading-tight mb-4 text-text-primary">Fitur <span class="text-gradient">Andalan Kami</span></h1>
+            <p class="text-lg text-text-muted max-w-2xl mx-auto mb-12">Kami menggabungkan AI canggih untuk membuat kontenmu bersinar.</p>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
+                <div class="futuristic-card p-6 rounded-2xl">
+                    <h3 class="text-xl font-bold mb-2 text-accent">Analisis SEO Mendalam</h3>
+                    <p class="text-text-muted">AI kami mengidentifikasi kata kunci dan topik yang relevan untuk meningkatkan visibilitas kontenmu.</p>
+                </div>
+                <div class="futuristic-card p-6 rounded-2xl">
+                    <h3 class="text-xl font-bold mb-2 text-accent">Caption Jenaka & Strategis</h3>
+                    <p class="text-text-muted">Dapatkan 5 gaya caption berbeda, dari celetukan spontan hingga deskripsi yang ramah SEO.</p>
+                </div>
+                <div class="futuristic-card p-6 rounded-2xl">
+                    <h3 class="text-xl font-bold mb-2 text-accent">Rekomendasi Lagu Kontekstual</h3>
+                    <p class="text-text-muted">AI kami memilih lagu viral yang cocok dengan nuansa fotomu.</p>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Page: Pricing -->
+        <div id="page-harga" class="page-content hidden w-full max-w-4xl mx-auto fade-in relative">
+            <h1 class="text-4xl md:text-5xl font-bold font-logo leading-tight mb-4 text-text-primary">Paket Harga yang <span class="text-gradient">Sederhana</span></h1>
+            <p class="text-lg text-text-muted max-w-2xl mx-auto mb-12">Pilih paket yang paling sesuai dengan kebutuhanmu. Upgrade kapan saja.</p>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-12 text-left max-w-3xl mx-auto">
+                <!-- Free Tier -->
+                <div class="futuristic-card p-8 rounded-2xl flex flex-col">
+                    <h3 class="text-2xl font-bold mb-2 text-accent-light">Gratis</h3>
+                    <p class="text-4xl font-bold text-text-primary mb-4">Rp 0</p>
+                    <ul class="space-y-3 text-text-muted flex-grow mb-8">
+                        <li class="flex items-start"><span class="text-accent mr-2 mt-1">✓</span><span><strong>5 Analisis</strong> per hari</span></li>
+                        <li class="flex items-start"><span class="text-accent mr-2 mt-1">✓</span><span><strong>Mode Santai</strong> untuk ide caption</span></li>
+                        <li class="flex items-start"><span class="text-accent mr-2 mt-1">✓</span><span>Rekomendasi Lagu</span></li>
+                    </ul>
+                    <button class="btn-secondary mt-auto w-full" disabled>Paket Anda Saat Ini</button>
+                </div>
+                <!-- Premium Tier -->
+                <div class="futuristic-card p-8 rounded-2xl flex flex-col border-2 border-accent" style="--color-card-border: var(--color-accent);">
+                    <h3 class="text-2xl font-bold mb-2 text-accent">Premium</h3>
+                    <p class="text-4xl font-bold text-text-primary mb-4">Rp 10.000<span class="text-lg font-sans font-normal text-text-muted">/bulan</span></p>
+                    <ul class="space-y-3 text-text-muted flex-grow mb-8">
+                        <li class="flex items-start"><span class="text-accent mr-2 mt-1 font-bold">✓</span><span><strong>Analisis Tanpa Batas</strong></span></li>
+                        <li class="flex items-start"><span class="text-accent mr-2 mt-1 font-bold">✓</span><span><strong>Mode Kreator</strong> (SEO & Alt Text)</span></li>
+                        <li class="flex items-start"><span class="text-accent mr-2 mt-1 font-bold">✓</span><span><strong>Background AI Kustom</strong></span></li>
+                        <li class="flex items-start"><span class="text-accent mr-2 mt-1 font-bold">✓</span><span>Dukungan Prioritas</span></li>
+                    </ul>
+                    <button id="upgradeButtonPricing" class="btn-primary mt-auto w-full">Upgrade ke Premium</button>
+                </div>
+            </div>
+        </div>
+
+
+        <!-- Page: Riwayat (History) -->
+        <div id="page-riwayat" class="page-content hidden w-full max-w-6xl mx-auto fade-in relative">
+            <h1 class="text-4xl md:text-5xl font-bold font-logo leading-tight mb-4 text-text-primary">Riwayat <span class="text-gradient">Analisis Anda</span></h1>
+            <p id="historyEmptyState" class="text-lg text-text-muted max-w-2xl mx-auto mb-12">Anda belum memiliki riwayat. Mulai analisis foto pertama Anda!</p>
+            <div id="historyGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <!-- History cards will be injected here -->
+            </div>
+        </div>
+
+        <!-- Page: Blog (Unchanged) -->
+        <div id="page-blog" class="page-content hidden"></div>
+        <!-- Page: Contact (Removed from nav, can be repurposed later) -->
+        <div id="page-kontak" class="page-content hidden"></div>
+        
+    </main>
+
+    <!-- Login/Register Modal -->
+    <div id="loginModal" class="hidden modal-overlay">
+        <div class="modal-content futuristic-card p-8 rounded-2xl text-left max-w-sm w-full relative">
+            <button id="closeLoginModalButton" class="absolute top-4 right-4 text-text-muted hover:text-text-primary transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+            <h2 id="loginModalTitle" class="text-2xl font-bold text-text-primary mb-2 text-center">Login</h2>
+            <p id="loginModalError" class="hidden bg-red-900/50 border border-red-500 text-red-300 px-4 py-2 rounded-lg text-center text-sm my-4"></p>
+            <form id="loginForm" class="space-y-4">
+                <div>
+                    <label for="loginEmail" class="block text-sm font-medium text-text-muted mb-2">Email</label>
+                    <input type="email" id="loginEmail" required class="w-full bg-slate-900/30 border border-slate-700 rounded-lg p-3 text-text-primary placeholder-text-muted focus:border-accent focus:ring-0 outline-none transition-colors" placeholder="anda@email.com">
+                </div>
+                <div>
+                    <label for="loginPassword" class="block text-sm font-medium text-text-muted mb-2">Password</label>
+                    <input type="password" id="loginPassword" required class="w-full bg-slate-900/30 border border-slate-700 rounded-lg p-3 text-text-primary placeholder-text-muted focus:border-accent focus:ring-0 outline-none" placeholder="••••••••">
+                </div>
+                <div class="pt-2">
+                    <button id="loginSubmitButton" type="submit" class="btn-primary w-full text-lg">Masuk</button>
+                </div>
+                <p class="text-sm text-center text-text-muted pt-2">
+                    <span id="loginSwitchPrompt">Belum punya akun?</span>
+                    <a href="#" id="loginSwitchLink" class="font-semibold text-accent hover:underline">Daftar di sini</a>
+                </p>
+            </form>
+        </div>
+    </div>
+
+
+    <!-- Subscription Modal -->
+    <div id="subscriptionModal" class="hidden modal-overlay">
+        <div class="modal-content futuristic-card p-8 rounded-2xl text-left max-w-md w-full relative overflow-hidden">
+            <button id="closeModalButton" class="absolute top-4 right-4 text-text-muted hover:text-text-primary transition-colors z-10">
+                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+            
+            <!-- View: Info -->
+            <div id="modalInfoView">
+                <h2 class="text-2xl font-bold text-text-primary mb-2">Upgrade ke Premium</h2>
+                <p class="text-text-muted mb-6">Buka semua fitur canggih hanya dengan <span class="font-bold text-accent">Rp 10.000/bulan</span>.</p>
+                <ul class="space-y-3 text-text-muted mb-8">
+                    <li class="flex items-start"><span class="text-accent mr-3 mt-1 font-bold">✓</span><span><strong>Analisis Tanpa Batas</strong> untuk semua fotomu.</span></li>
+                    <li class="flex items-start"><span class="text-accent mr-3 mt-1 font-bold">✓</span><span>Akses <strong>Mode Kreator</strong> untuk caption SEO-friendly & Alt Text.</span></li>
+                    <li class="flex items-start"><span class="text-accent mr-3 mt-1 font-bold">✓</span><span>Buat <strong>Background AI Kustom</strong> yang memukau.</span></li>
+                    <li class="flex items-start"><span class="text-accent mr-3 mt-1 font-bold">✓</span><span>Akses <strong>Riwayat Analisis</strong> Anda.</span></li>
+                </ul>
+                <button id="initiatePaymentButton" class="btn-primary w-full text-lg">Langganan Sekarang</button>
+            </div>
+
+            <!-- View: Processing -->
+            <div id="modalProcessingView" class="hidden text-center py-8">
+                <div class="loader-small"></div>
+                <p id="processingMessage" class="text-lg text-text-muted mt-4">Memproses pembayaran...</p>
+            </div>
+
+        </div>
+    </div>
+    
+    <!-- History Detail Modal -->
+    <div id="historyDetailModal" class="hidden modal-overlay">
+        <div class="modal-content futuristic-card p-8 rounded-2xl text-left max-w-2xl w-full relative overflow-hidden">
+             <button id="closeHistoryDetailModalButton" class="absolute top-4 right-4 text-text-muted hover:text-text-primary transition-colors z-10">
+                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+            <div id="historyDetailContent" class="max-h-[80vh] overflow-y-auto">
+                <!-- Detailed history content will be injected here -->
+            </div>
+        </div>
+    </div>
+
+
+    <script type="module" src="index.tsx"></script>
+<script type="module" src="/index.tsx"></script>
+</body>
+</html>
