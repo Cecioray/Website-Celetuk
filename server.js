@@ -19,10 +19,6 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// Serve static files from the root directory (e.g., index.html, index.css, index.tsx)
-app.use(express.static(__dirname));
-
-
 // --- Environment Variables & Constants ---
 const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY || 'YOUR_MIDTRANS_SERVER_KEY';
 const MIDTRANS_CLIENT_KEY = process.env.MIDTRANS_CLIENT_KEY || 'YOUR_MIDTRANS_CLIENT_KEY';
@@ -233,10 +229,13 @@ app.post('/api/history', authenticateToken, (req, res) => {
     res.status(201).json({ message: 'Riwayat berhasil disimpan.' });
 });
 
+// Serve static files from the 'dist' directory (Vite build output)
+app.use(express.static(path.join(__dirname, 'dist')));
+
 // Final catch-all to serve index.html for any non-API routes.
 // This is essential for single-page applications using client-side routing.
 app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'index.html'));
+    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
 // --- Server Start ---
