@@ -5,7 +5,8 @@
   "description": "",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "build": "tsc && cp index.html dist/ && cp index.css dist/"
   },
   "dependencies": {
     "@google/genai": "0.14.0",
