@@ -40,12 +40,14 @@ const loaderText = document.getElementById('loaderText') as HTMLParagraphElement
 const resultsContainer = document.getElementById('resultsContainer') as HTMLElement;
 const errorContainer = document.getElementById('errorContainer') as HTMLElement;
 const errorMessage = document.getElementById('errorMessage') as HTMLParagraphElement;
-const resultsGrid = document.getElementById('resultsGrid') as HTMLElement;
 const creatorResultCard = document.getElementById('creatorResultCard') as HTMLElement;
 const resetButton = document.getElementById('resetButton') as HTMLButtonElement;
 const backFromLoaderButton = document.getElementById('backFromLoaderButton') as HTMLButtonElement;
 const backFromResultsButton = document.getElementById('backFromResultsButton') as HTMLButtonElement;
 
+// --- New Result Preview Selectors ---
+const resultImagePreviewContainer = document.getElementById('resultImagePreviewContainer') as HTMLElement;
+const resultImagePreview = document.getElementById('resultImagePreview') as HTMLImageElement;
 
 // --- Subscription Modal Selectors ---
 const subscriptionModal = document.getElementById('subscriptionModal') as HTMLElement;
@@ -116,14 +118,6 @@ interface User {
     generation_credits?: number;
 }
 
-interface HistoryItem {
-    id: string; // timestamp
-    thumbnailDataUrl: string;
-    resultData: CreatorResult[] | CasualResult[];
-    persona: 'creator' | 'casual';
-    date: string;
-}
-
 interface Song {
     title: string;
     artist: string;
@@ -131,22 +125,26 @@ interface Song {
     preview_url?: string;
 }
 
-interface CasualResult {
-    mood: string;
-    caption: string;
+interface Caption {
+    style: 'Gen Z' | 'Bijak';
+    text: string;
+}
+
+interface AiResult {
+    captions: Caption[];
     hashtags: string[];
     song: Song;
 }
 
-interface CreatorResult {
-    seoCaption: string;
-    altText: string;
-    hashtags: {
-        umum: string[];
-        spesifik: string[];
-    };
-    song: Song;
+
+interface HistoryItem {
+    id: string; // timestamp
+    thumbnailDataUrl: string;
+    resultData: AiResult[];
+    persona: 'creator' | 'casual';
+    date: string;
 }
+
 
 // --- API & Auth Functions ---
 
@@ -303,12 +301,14 @@ function resetUI() {
     resultsContainer.classList.add('hidden');
     loaderContainer.classList.add('hidden');
     errorContainer.classList.add('hidden');
+    resultImagePreviewContainer.classList.add('hidden');
     
     fileInput.value = '';
     themeInput.value = '';
     base64ImageData = null;
     userPersona = null;
     imagePreview.src = '#';
+    resultImagePreview.src = '#';
     personaButtons.forEach(btn => btn.classList.remove('selected'));
     
     updatePremiumUI();
@@ -516,8 +516,10 @@ function updatePremiumUI() {
         mobileHistoryNavButton.classList.remove('hidden'); // Show mobile history for premium
     } else {
         premiumTags.forEach(tag => (tag as HTMLElement).style.display = 'inline-block');
-        if (themeInputContainer) themeInputContainer.classList.add('disabled-feature');
-        themeInput.disabled = true;
+        // The input is for context for all users, so we don't disable it.
+        // The backend will decide if a background is generated.
+        if (themeInputContainer) themeInputContainer.classList.remove('disabled-feature');
+        themeInput.disabled = false;
         upgradeButtonPricing.textContent = "Upgrade ke Premium";
         upgradeButtonPricing.disabled = false;
         historyNavButton.classList.add('hidden'); // Hide history for non-premium
@@ -595,16 +597,9 @@ async function handleAnalyzeClick() {
     errorContainer.classList.add('hidden');
 
     const theme = themeInput.value.trim();
-    loaderText.textContent = theme ? "MEMBUAT BACKGROUND & MENGANALISIS..." : "MENGANALISIS KONTEN...";
+    loaderText.textContent = (theme && currentUser.is_premium) ? "MEMBUAT BACKGROUND & MENGANALISIS..." : "MENGANALISIS KONTEN...";
 
     try {
-        if (theme && !currentUser.is_premium) {
-            showError("Background AI kustom adalah fitur Premium. Silakan upgrade.");
-            goBackToPreview();
-            openSubscriptionModal();
-            return;
-        }
-
         const payload = { base64ImageData, persona: userPersona, theme };
 
         const response = await fetchWithAuth(`${API_BASE_URL}/api/analyze`, {
@@ -633,7 +628,7 @@ async function handleAnalyzeClick() {
             throw new Error("Respons AI tidak valid atau kosong. Coba lagi.");
         }
 
-        displayResults(analysis);
+        displayResults(analysis, base64ImageData);
         await addToHistory(base64ImageData, analysis, userPersona);
         loaderContainer.classList.add('hidden');
         resultsContainer.classList.remove('hidden');
@@ -724,17 +719,22 @@ function copyToClipboard(textToCopy: string, buttonElement: HTMLButtonElement) {
 }
 window.copyToClipboard = copyToClipboard;
 
-function displayResults(results: CreatorResult[] | CasualResult[], currentPersona = userPersona) {
-    resultsGrid.innerHTML = '';
+function displayResults(results: AiResult[], imageDataUrl: string, currentPersona = userPersona) {
     creatorResultCard.innerHTML = '';
-    resultsGrid.classList.add('hidden');
-    creatorResultCard.classList.add('hidden');
 
-    const container = currentPersona === 'creator' ? creatorResultCard : resultsGrid;
-    container.innerHTML = buildResultCardsHTML(results, currentPersona);
-    container.classList.remove('hidden');
+    // Populate the result image preview
+    if(imageDataUrl) {
+        resultImagePreview.src = imageDataUrl;
+        resultImagePreviewContainer.classList.remove('hidden');
+    }
+    
+    // Build the main results card
+    creatorResultCard.innerHTML = buildResultCardsHTML(results, currentPersona);
+    creatorResultCard.classList.remove('hidden');
+
     setupAudioPlayers();
 }
+
 
 function buildSongPlayerHTML(song?: Song): string {
     if (!song) return '';
@@ -763,97 +763,63 @@ function buildSongPlayerHTML(song?: Song): string {
     `;
 }
 
-function buildResultCardsHTML(results: CreatorResult[] | CasualResult[], persona: 'creator' | 'casual' | null): string {
-    if (persona === 'creator' && results.length > 0) {
-        const item = results[0] as CreatorResult;
-        const hashtagsUmum = item.hashtags?.umum || [];
-        const hashtagsSpesifik = item.hashtags?.spesifik || [];
-        const combinedHashtags = [...hashtagsUmum, ...hashtagsSpesifik].map(h => `#${h}`).join(' ');
+function buildResultCardsHTML(results: AiResult[], persona: 'creator' | 'casual' | null): string {
+    // The new structure has one result object in the array
+    if (!results || results.length === 0) return '';
+    
+    const item = results[0]; // { captions: [...], hashtags: [...], song: ... }
+    const captions = item.captions || [];
+    const hashtags = item.hashtags || [];
+    const combinedHashtags = hashtags.map(h => `#${h}`).join(' ');
 
+    const captionsHTML = captions.map((caption: {style: string, text: string}) => {
+        const badge = caption.style === 'Bijak' 
+            ? `<span class="absolute top-2 right-2 text-xs font-semibold bg-indigo-500 text-indigo-100 px-2 py-1 rounded-full">${caption.style}</span>` 
+            : '';
         return `
-        <div class="space-y-6 futuristic-card p-6 rounded-2xl shadow-lg text-left">
-            <!-- SEO Caption -->
-            <div>
-                <div class="flex justify-between items-start mb-2">
-                    <h3 class="text-xl font-bold text-slate-100 flex items-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>Caption SEO</h3>
-                    <button onclick='copyToClipboard(${JSON.stringify(item.seoCaption || '')}, this)' class="btn-copy">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                    </button>
-                </div>
-                <p class="text-slate-300">${item.seoCaption || ''}</p>
+            <div class="bg-slate-800/60 p-4 rounded-lg relative transition-all hover:bg-slate-800">
+                <p class="text-slate-200 pr-16">"${caption.text}"</p>
+                ${badge}
+                <button onclick='copyToClipboard(${JSON.stringify(caption.text)}, this)' class="btn-copy absolute bottom-3 right-3">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                </button>
             </div>
-            <hr class="border-slate-700/50">
-            <!-- Alt Text -->
-            <div>
-                <div class="flex justify-between items-start mb-2">
-                    <h3 class="text-xl font-bold text-slate-100 flex items-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>Alt Text</h3>
-                     <button onclick='copyToClipboard(${JSON.stringify(item.altText || '')}, this)' class="btn-copy">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                    </button>
-                </div>
-                <p class="text-slate-200 bg-slate-800/60 p-3 rounded-md text-sm">${item.altText || ''}</p>
+        `;
+    }).join('');
+
+    return `
+    <div class="space-y-6 futuristic-card p-6 rounded-2xl shadow-lg text-left h-full">
+        <!-- Captions -->
+        <div>
+            <h3 class="text-xl font-bold text-slate-100 flex items-center mb-4"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>5 Opsi Caption</h3>
+            <div class="space-y-3">
+                ${captionsHTML}
             </div>
-            <hr class="border-slate-700/50">
-            <!-- Hashtags -->
-            <div>
-                 <div class="flex justify-between items-start mb-3">
-                    <h3 class="text-xl font-bold text-slate-100 flex items-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" /></svg>Hashtag</h3>
-                    <button onclick='copyToClipboard(${JSON.stringify(combinedHashtags)}, this)' class="btn-copy">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                    </button>
-                </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                        <h4 class="font-semibold text-slate-400 mb-2">Umum</h4>
-                        <p class="text-sm text-accent">${hashtagsUmum.map(h => `#${h}`).join(' ')}</p>
-                    </div>
-                    <div>
-                        <h4 class="font-semibold text-slate-400 mb-2">Spesifik</h4>
-                        <p class="text-sm text-accent">${hashtagsSpesifik.map(h => `#${h}`).join(' ')}</p>
-                    </div>
-                </div>
+        </div>
+        <hr class="border-slate-700/50">
+        <!-- Hashtags -->
+        <div>
+             <div class="flex justify-between items-start mb-3">
+                <h3 class="text-xl font-bold text-slate-100 flex items-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" /></svg>Hashtag</h3>
+                <button onclick='copyToClipboard(${JSON.stringify(combinedHashtags)}, this)' class="btn-copy">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                </button>
             </div>
-            <hr class="border-slate-700/50">
-            <!-- Song -->
-            <div>
-                <h3 class="text-xl font-bold mb-2 text-slate-100 flex items-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" /></svg>Rekomendasi Lagu</h3>
-                ${buildSongPlayerHTML(item.song)}
-            </div>
-        </div>`;
-    } else if (persona === 'casual') {
-        return (results as CasualResult[]).map(item => {
-            const hashtags = item.hashtags || [];
-            
-            return `
-                <div class="space-y-4 futuristic-card p-5 rounded-2xl shadow-lg text-left">
-                    <div>
-                        <div class="flex justify-between items-start mb-2">
-                            <h3 class="text-lg font-semibold text-accent flex items-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd" /></svg>Mood: ${item.mood || 'Laper'}</h3>
-                            <button onclick='copyToClipboard(${JSON.stringify(item.caption || '')}, this)' class="btn-copy">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                            </button>
-                        </div>
-                        <p class="text-lg text-slate-100">"${item.caption || ''}"</p>
-                    </div>
-                    <hr class="border-slate-700/50">
-                    <div>
-                        <h3 class="text-base font-semibold text-slate-400 mb-2">#️⃣ Hashtag</h3>
-                        <p class="text-sm text-accent">${hashtags.map(h => `#${h}`).join(' ')}</p>
-                    </div>
-                    <hr class="border-slate-700/50">
-                    <div>
-                        <h3 class="text-base font-semibold text-slate-400 mb-2">🎵 Lagu</h3>
-                        ${buildSongPlayerHTML(item.song)}
-                    </div>
-                </div>`;
-        }).join('');
-    }
-    return '';
+            <p class="text-accent">${combinedHashtags}</p>
+        </div>
+        <hr class="border-slate-700/50">
+        <!-- Song -->
+        <div>
+            <h3 class="text-xl font-bold mb-2 text-slate-100 flex items-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" /></svg>Rekomendasi Lagu</h3>
+            ${buildSongPlayerHTML(item.song)}
+        </div>
+    </div>`;
 }
+
 
 // --- History Management ---
 
-async function addToHistory(imageDataUrl: string, resultData: CreatorResult[] | CasualResult[], persona: 'creator' | 'casual') {
+async function addToHistory(imageDataUrl: string, resultData: AiResult[], persona: 'creator' | 'casual') {
     if (!currentUser?.is_premium) return;
     
     try {
@@ -862,7 +828,7 @@ async function addToHistory(imageDataUrl: string, resultData: CreatorResult[] | 
             thumbnailDataUrl,
             resultData,
             persona,
-            date: new Date().toLocaleDateString('id-ID')
+            // The date is now set by the server, so we don't need to send it.
         };
         const response = await fetchWithAuth(`${API_BASE_URL}/api/history`, {
             method: 'POST',
@@ -912,8 +878,8 @@ async function renderHistoryPage() {
             historyGrid.classList.remove('hidden');
             history.forEach(item => {
                 const firstResult = item.resultData[0];
-                const title = (firstResult as CasualResult).mood || 'Analisis Kreator';
-                const caption = (firstResult as CasualResult).caption || (firstResult as CreatorResult).seoCaption;
+                const title = item.persona === 'creator' ? 'Analisis Kreator' : 'Analisis Santai';
+                const caption = firstResult.captions.length > 0 ? firstResult.captions[0].text : 'Hasil Analisis';
 
                 const card = document.createElement('div');
                 card.className = 'futuristic-card rounded-2xl overflow-hidden cursor-pointer text-left flex flex-col';

@@ -1,5 +1,4 @@
 
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -12,40 +11,156 @@ const bcrypt = require('bcryptjs');
 const midtransClient = require('midtrans-client');
 const path = require('path');
 const { GoogleGenAI, Type } = require('@google/genai');
+const { Pool } = require('pg');
+const axios = require('axios');
 require('dotenv').config();
 
+// --- Configuration ---
 const app = express();
 const PORT = process.env.PORT || 3000;
+const SALT_ROUNDS = 10;
 
 // --- Middleware ---
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// --- Environment Variables & Constants ---
-const MIDTRANS_SERVER_KEY = process.env.MIDTRANS_SERVER_KEY || 'YOUR_MIDTRANS_SERVER_KEY';
-const MIDTRANS_CLIENT_KEY = process.env.MIDTRANS_CLIENT_KEY || 'YOUR_MIDTRANS_CLIENT_KEY';
-const JWT_SECRET_KEY = process.env.JWT_SECRET_KEY || 'default-secret-key-for-development-should-be-changed';
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const SALT_ROUNDS = 10;
-
-// --- In-Memory Database (for demonstration) ---
-const users = []; // Stores user objects: { id, email, password, is_premium, premium_expiry, generation_credits }
-const history = {}; // Keyed by user ID, stores an array of history items
-let userIdCounter = 1;
-
-// --- Midtrans Snap Instance ---
-const snap = new midtransClient.Snap({
-    isProduction: false, // Set to true for production environment
-    serverKey: MIDTRANS_SERVER_KEY,
-    clientKey: MIDTRANS_CLIENT_KEY
+// --- PostgreSQL Database Connection (Neon) ---
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: {
+        rejectUnauthorized: false // Required for Neon DB
+    }
 });
 
-// --- Google AI Instance ---
+const createTables = async () => {
+    const client = await pool.connect();
+    try {
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                email TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                is_premium BOOLEAN DEFAULT FALSE,
+                premium_expiry BIGINT,
+                generation_credits INTEGER DEFAULT 5
+            );
+        `);
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS history (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                thumbnail_data_url TEXT NOT NULL,
+                result_data TEXT NOT NULL,
+                persona TEXT NOT NULL,
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id) ON DELETE CASCADE
+            );
+        `);
+        console.log("PostgreSQL tables are ready.");
+    } catch (err) {
+        console.error("Error creating tables:", err);
+    } finally {
+        client.release();
+    }
+};
+
+// --- External Service Clients ---
+const snap = new midtransClient.Snap({
+    isProduction: process.env.NODE_ENV === 'production',
+    serverKey: process.env.MIDTRANS_SERVER_KEY,
+    clientKey: process.env.MIDTRANS_CLIENT_KEY
+});
+
 let ai;
-if (GEMINI_API_KEY) {
-    ai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
+if (process.env.GEMINI_API_KEY) {
+    ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 } else {
-    console.warn('--- WARNING: GEMINI_API_KEY is not set in the .env file. AI features will be disabled. ---');
+    console.warn('WARNING: API_KEY is not set. AI features will be disabled.');
+}
+
+// --- Spotify API Helpers ---
+let spotifyToken = { value: null, expires: 0 };
+
+const getSpotifyToken = async () => {
+    if (spotifyToken.value && spotifyToken.expires > Date.now()) {
+        return spotifyToken.value;
+    }
+    try {
+        const credentials = Buffer.from(`${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`).toString('base64');
+        const response = await axios.post('https://accounts.spotify.com/api/token', 'grant_type=client_credentials', {
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Authorization': `Basic ${credentials}`
+            }
+        });
+        const tokenData = response.data;
+        spotifyToken = {
+            value: tokenData.access_token,
+            expires: Date.now() + (tokenData.expires_in - 300) * 1000 // Refresh 5 mins before expiry
+        };
+        console.log("New Spotify token obtained.");
+        return spotifyToken.value;
+    } catch (error) {
+        console.error("Error getting Spotify token:", error.response ? error.response.data : error.message);
+        return null;
+    }
+};
+
+const searchSpotifyTrack = async (query, token) => {
+    if (!token) return null;
+    try {
+        const response = await axios.get('https://api.spotify.com/v1/search', {
+            params: { q: query, type: 'track', limit: 1 },
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const track = response.data.tracks.items[0];
+        if (track) {
+            return {
+                preview_url: track.preview_url,
+                album_art_url: track.album.images[0]?.url
+            };
+        }
+        return null;
+    } catch (error) {
+        console.error("Error searching Spotify:", error.response ? error.response.data : error.message);
+        return null;
+    }
+};
+
+// --- AI Helper Function ---
+async function getAiAnalysis(base64ImageData, persona, theme) {
+    const imageData = base64ImageData.split(',')[1];
+    const systemInstruction = `You are a Gen Z content strategist, expert in viral trends for Instagram & TikTok. Your tone is witty, smart, and current.
+    TASK: Analyze the provided image and generate a complete content package.
+    - Persona: ${persona === 'creator' ? 'Strategic, SEO-focused, professional yet engaging.' : 'Witty, relatable, authentic slang.'}
+    - Theme: ${theme ? `Naturally integrate the theme "${theme}".` : 'No specific theme.'}
+    RULES:
+    1.  5 CAPTION OPTIONS: 4 Gen Z style (max 10 words, witty, use relevant slang like 'POV:', 'era', 'the vibes'). 1 Wise style (short, poetic, relevant).
+    2.  3-5 HASHTAGS: Specific, aesthetic, relevant (e.g., 'cinematicphotography', 'goldenhourglow', not #love).
+    3.  1 SONG RECOMMENDATION: Provide the song title and artist that perfectly match the image's vibe.
+    4.  OUTPUT FORMAT: Return ONLY a valid JSON object.`;
+
+    const responseSchema = {
+        type: Type.OBJECT,
+        properties: {
+            captions: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { style: { type: Type.STRING }, text: { type: Type.STRING } } } },
+            hashtags: { type: Type.ARRAY, items: { type: Type.STRING } },
+            song: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, artist: { type: Type.STRING } } }
+        },
+        required: ["captions", "hashtags", "song"]
+    };
+
+    const imagePart = { inlineData: { mimeType: 'image/jpeg', data: imageData } };
+    const textPart = { text: "Analyze this image and generate content." };
+
+    const analysisResponse = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: { parts: [textPart, imagePart] },
+        config: { systemInstruction, responseMimeType: "application/json", responseSchema },
+    });
+    
+    const jsonText = analysisResponse.text.trim();
+    return JSON.parse(jsonText);
 }
 
 
@@ -53,300 +168,137 @@ if (GEMINI_API_KEY) {
 const authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
-    if (token == null) return res.sendStatus(401); // Unauthorized
+    if (token == null) return res.sendStatus(401);
 
-    jwt.verify(token, JWT_SECRET_KEY, (err, userPayload) => {
-        if (err) {
-            console.error('JWT verification error:', err);
-            return res.sendStatus(403); // Forbidden
-        }
+    jwt.verify(token, process.env.JWT_SECRET, (err, userPayload) => {
+        if (err) return res.sendStatus(403);
         req.user = userPayload; // Contains { id, email }
         next();
     });
 };
 
 
-// --- AI Helper Functions ---
-
-/**
- * Generates a background image using AI.
- * @param {string} theme - The user-provided theme for the background.
- * @returns {Promise<string|null>} - A promise that resolves to a base64 data URL of the image, or null on failure.
- */
-async function generateAiBackground(theme) {
-    try {
-        const imageResponse = await ai.models.generateImages({
-            model: 'imagen-3.0-generate-002',
-            prompt: `cinematic, high resolution, photorealistic background: ${theme}`,
-            config: {
-                numberOfImages: 1,
-                outputMimeType: 'image/jpeg',
-                aspectRatio: '16:9',
-            },
-        });
-        const base64ImageBytes = imageResponse.generatedImages[0].image.imageBytes;
-        return `data:image/jpeg;base64,${base64ImageBytes}`;
-    } catch (error) {
-        console.error("Gagal membuat background AI:", error);
-        return null; // Return null on failure so Promise.all doesn't reject the whole batch
-    }
-}
-
-/**
- * Analyzes the image content using AI.
- * @param {string} base64ImageData - The base64 encoded image data.
- * @param {'creator'|'casual'} persona - The selected user persona.
- * @param {string} theme - The optional theme for context.
- * @returns {Promise<Object>} - A promise that resolves to the parsed JSON analysis from the AI.
- */
-async function getAiAnalysis(base64ImageData, persona, theme) {
-    const imageData = base64ImageData.split(',')[1];
-    const themeInstruction = theme ? `\nSANGAT PENTING: Sesuaikan semua rekomendasi (caption, hashtag, lagu) dengan tema yang diberikan pengguna: "${theme}".` : "";
-
-    let systemInstruction = "";
-    let responseSchema;
-    const songSchema = {
-        type: Type.OBJECT,
-        properties: {
-            title: { type: Type.STRING, description: 'Judul lagu.' },
-            artist: { type: Type.STRING, description: 'Nama artis.' },
-            album_art_url: { type: Type.STRING, description: 'URL gambar sampul album (dari Spotify, dll). Opsional.' },
-            preview_url: { type: Type.STRING, description: 'URL pratinjau audio 30 detik. Opsional.' }
-        },
-        required: ["title", "artist"]
-    };
-
-    if (persona === 'creator') {
-        systemInstruction = `Anda adalah seorang social media manager Gen Z yang strategis, kreatif, dan ahli dalam membuat konten viral yang tetap terlihat profesional. Analisis gambar ini untuk menghasilkan konten yang engaging dan optimal untuk Instagram/TikTok.
-1.  **Caption SEO:** Buat caption yang menarik dengan 'hook' yang kuat di awal (sekitar 25-40 kata). Gunakan gaya bahasa modern dan relevan untuk audiens muda, tapi tetap informatif dan profesional. Sisipkan keyword yang relevan secara natural.
-2.  **Alt Text:** Deskripsi gambar yang jelas, akurat, dan kaya keyword untuk aksesibilitas dan SEO.
-3.  **Hashtag:** Berikan 5 hashtag umum (volume tinggi) dan 5 hashtag spesifik (niche, relevan dengan gambar dan caption).
-4.  **Lagu:** SATU rekomendasi lagu yang sedang tren di TikTok/Reels yang cocok dengan nuansa konten. Sertakan judul, artis, dan jika memungkinkan, URL publik untuk gambar sampul album dan pratinjau audio 30 detik.` + themeInstruction;
-        responseSchema = { type: Type.OBJECT, properties: { seoCaption: { type: Type.STRING }, altText: { type: Type.STRING }, hashtags: { type: Type.OBJECT, properties: { umum: { type: Type.ARRAY, items: { type: Type.STRING } }, spesifik: { type: Type.ARRAY, items: { type: Type.STRING } } } }, song: songSchema }, required: ["seoCaption", "altText", "hashtags", "song"] };
-    } else { // casual
-        systemInstruction = `Anda adalah seorang content creator Gen Z yang sangat ahli membuat konten viral. Tugas Anda adalah melihat gambar dan memberikan LIMA ide konten dari sudut pandang yang unik dan 'relatable'.
-- Gaya Bahasa: Gunakan bahasa gaul Gen Z yang relevan (contoh: "spill", "pov", "vibes", "era"). Singkat, edgy, dan hindari kata-kata 'cringe' atau terlalu formal.
-- Jika ada subjek (manusia/hewan): Buat caption seolah-olah subjek itu yang berbicara (Point of View).
-- Jika tidak ada subjek (pemandangan/makanan): Buat caption dari sudut pandang orang yang mengambil foto, fokus pada celetukan lucu.
-- PENTING: Hindari caption narsis (contoh: "Aku cantik banget"). Fokus pada humor, observasi unik, atau perasaan yang tulus.
-Setiap ide WAJIB berisi:
-1.  **Mood:** Vibe atau perasaan (contoh: 'Lagi chill', 'Laper era', 'Random thoughts').
-2.  **Caption:** Super singkat dan jenaka. MAKSIMAL 6 KATA.
-3.  **Hashtags:** 3 hashtag yang spesifik dan sedang tren.
-4.  **Lagu:** Satu lagu viral (TikTok/Reels) yang cocok dengan mood. Sertakan judul, artis, dan jika memungkinkan, URL publik untuk sampul album dan pratinjau audio.` + themeInstruction;
-        responseSchema = { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { mood: { type: Type.STRING }, caption: { type: Type.STRING }, hashtags: { type: Type.ARRAY, items: { type: Type.STRING } }, song: songSchema }, required: ["mood", "caption", "hashtags", "song"] } };
-    }
-
-    const imagePart = { inlineData: { mimeType: 'image/jpeg', data: imageData } };
-    const textPart = { text: "Analisis gambar ini dan berikan rekomendasi konten." };
-
-    const analysisResponse = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
-        contents: { parts: [textPart, imagePart] },
-        config: { systemInstruction: systemInstruction, responseMimeType: "application/json", responseSchema: responseSchema },
-    });
-    
-    const jsonText = analysisResponse.text.trim();
-    const parsedJson = JSON.parse(jsonText);
-    return Array.isArray(parsedJson) ? parsedJson : [parsedJson];
-}
-
-
 // --- API Endpoints ---
 
-// GET /api/config - Provides the Midtrans Client Key to the frontend
 app.get('/api/config', (req, res) => {
-    res.json({ midtransClientKey: MIDTRANS_CLIENT_KEY });
+    res.json({ midtransClientKey: process.env.MIDTRANS_CLIENT_KEY });
 });
 
-// POST /api/register - User registration
 app.post('/api/register', async (req, res) => {
     try {
         const { email, password } = req.body;
-        if (!email || !password) {
-            return res.status(400).json({ error: 'Email dan password dibutuhkan.' });
-        }
-
-        const existingUser = users.find(u => u.email === email);
-        if (existingUser) {
-            return res.status(400).json({ error: 'Email sudah terdaftar.' });
-        }
-
-        const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
-        const newUser = {
-            id: userIdCounter++,
-            email: email,
-            password: hashedPassword,
-            is_premium: false,
-            premium_expiry: null,
-            generation_credits: 5 // Free trial credits for new users
-        };
-        users.push(newUser);
-
-        console.log(`User registered: ${newUser.email}`);
-        res.status(201).json({ message: 'Pendaftaran berhasil. Silakan login.' });
+        if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
+        
+        const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+        await pool.query(`INSERT INTO users (email, password_hash) VALUES ($1, $2)`, [email, passwordHash]);
+        res.status(201).json({ message: 'Registration successful. Please log in.' });
     } catch (error) {
+        if (error.code === '23505') return res.status(409).json({ error: 'Email is already registered.' });
         console.error('Registration error:', error);
-        res.status(500).json({ error: 'Terjadi kesalahan pada server.' });
+        res.status(500).json({ error: 'An internal server error occurred.' });
     }
 });
 
-// POST /api/login - User login
 app.post('/api/login', async (req, res) => {
     try {
         const { email, password } = req.body;
-        const user = users.find(u => u.email === email);
-        if (!user) {
-            return res.status(400).json({ error: 'Email atau password salah.' });
-        }
+        const result = await pool.query(`SELECT * FROM users WHERE email = $1`, [email]);
+        const user = result.rows[0];
 
-        const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-            return res.status(400).json({ error: 'Email atau password salah.' });
+        if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+            return res.status(401).json({ error: 'Invalid email or password.' });
         }
-
+        
         const tokenPayload = { id: user.id, email: user.email };
-        const token = jwt.sign(tokenPayload, JWT_SECRET_KEY, { expiresIn: '7d' });
-
+        const token = jwt.sign(tokenPayload, process.env.JWT_SECRET_KEY, { expiresIn: '7d' });
         res.json({ token });
     } catch (error) {
         console.error('Login error:', error);
-        res.status(500).json({ error: 'Terjadi kesalahan pada server.' });
+        res.status(500).json({ error: 'An internal server error occurred.' });
     }
 });
 
-// GET /api/me - Get current user's profile
-app.get('/api/me', authenticateToken, (req, res) => {
-    const user = users.find(u => u.id === req.user.id);
-    if (!user) {
-        return res.status(404).json({ error: 'Pengguna tidak ditemukan.' });
+app.get('/api/me', authenticateToken, async (req, res) => {
+    try {
+        const result = await pool.query(`SELECT id, email, is_premium, premium_expiry, generation_credits FROM users WHERE id = $1`, [req.user.id]);
+        let user = result.rows[0];
+        if (!user) return res.status(404).json({ error: 'User not found.' });
+        
+        if (user.is_premium && user.premium_expiry && Date.now() > user.premium_expiry) {
+            await pool.query(`UPDATE users SET is_premium = FALSE, premium_expiry = NULL WHERE id = $1`, [user.id]);
+            user.is_premium = false;
+        }
+        res.json(user);
+    } catch (error) {
+        console.error('Get user error:', error);
+        res.status(500).json({ error: 'Failed to retrieve user data.' });
     }
-
-    // Automatically check for expired premium status on profile fetch
-    if (user.is_premium && user.premium_expiry && Date.now() > user.premium_expiry) {
-        user.is_premium = false;
-        user.premium_expiry = null;
-        console.log(`Premium expired for user ${user.email}`);
-    }
-
-    const { password, ...userData } = user;
-    res.json(userData);
 });
 
-// POST /api/analyze - Main endpoint for AI analysis and background generation
 app.post('/api/analyze', authenticateToken, async (req, res) => {
-    if (!ai) {
-        return res.status(503).json({ error: 'Layanan AI tidak dikonfigurasi di server.' });
-    }
+    if (!ai) return res.status(503).json({ error: 'AI service is not configured on the server.' });
 
     try {
         const { base64ImageData, persona, theme } = req.body;
-        const userRecord = users.find(u => u.id === req.user.id);
+        const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
+        const user = userResult.rows[0];
+        if (!user) return res.status(404).json({ error: 'User not found.' });
 
-        if (!userRecord) {
-            return res.status(404).json({ error: 'Pengguna tidak ditemukan.' });
+        if (!user.is_premium && user.generation_credits <= 0) {
+            return res.status(403).json({ error: 'Your free quota has been used up.', quotaExceeded: true });
+        }
+        if (!base64ImageData || !persona) return res.status(400).json({ error: 'Image data and persona are required.' });
+
+        let analysisResult = await getAiAnalysis(base64ImageData, persona, theme);
+
+        if (analysisResult && analysisResult.song) {
+            const spotifyApiToken = await getSpotifyToken();
+            const spotifyData = await searchSpotifyTrack(`${analysisResult.song.title} ${analysisResult.song.artist}`, spotifyApiToken);
+            if (spotifyData) {
+                analysisResult.song.preview_url = spotifyData.preview_url;
+                analysisResult.song.album_art_url = spotifyData.album_art_url;
+            }
         }
         
-        // Check if user has generation credits or is premium
-        const canGenerate = userRecord.is_premium || (userRecord.generation_credits && userRecord.generation_credits > 0);
-        
-        if (!canGenerate) {
-            return res.status(403).json({ 
-                error: 'Kuota gratis Anda telah habis. Silakan upgrade ke Pro untuk melanjutkan.',
-                quotaExceeded: true 
-            });
+        if (!user.is_premium) {
+            await pool.query('UPDATE users SET generation_credits = generation_credits - 1 WHERE id = $1', [user.id]);
         }
         
-        if (!base64ImageData || !persona) {
-            return res.status(400).json({ error: 'Data gambar dan persona diperlukan.' });
-        }
-        
-        // Create promises for both AI tasks to run them in parallel
-        const analysisPromise = getAiAnalysis(base64ImageData, persona, theme);
-        const backgroundPromise = (theme && userRecord.is_premium)
-            ? generateAiBackground(theme)
-            : Promise.resolve(null);
-
-        // Await both promises to complete
-        const [analysisResult, backgroundImageUrl] = await Promise.all([analysisPromise, backgroundPromise]);
-        
-        if (!analysisResult || (Array.isArray(analysisResult) && analysisResult.length === 0)) {
-            throw new Error("Respons AI tidak valid atau kosong. Coba lagi.");
-        }
-
-        // Decrement credits if user is not premium
-        if (!userRecord.is_premium) {
-            userRecord.generation_credits = Math.max(0, userRecord.generation_credits - 1);
-            console.log(`User ${userRecord.email} used a credit. Remaining: ${userRecord.generation_credits}`);
-        }
-
-        res.json({ analysis: analysisResult, background: backgroundImageUrl });
-
+        res.json({ analysis: [analysisResult] }); // Wrap in array to match client expectation
     } catch (error) {
         console.error("Error in /api/analyze:", error);
-        if (error instanceof SyntaxError) {
-             return res.status(500).json({ error: 'Gagal mem-parsing respons dari AI. Coba lagi.' });
-        }
-        res.status(500).json({ error: 'Gagal menganalisis konten. Server AI mungkin sedang sibuk.' });
+        res.status(500).json({ error: error.message || 'Failed to analyze content.' });
     }
 });
 
 
-// POST /api/create-transaction - Initiate a payment with Midtrans
 app.post('/api/create-transaction', authenticateToken, async (req, res) => {
     try {
-        const user = users.find(u => u.id === req.user.id);
-        if (!user) {
-            return res.status(404).json({ error: 'Pengguna tidak ditemukan.' });
-        }
-
         const { amount } = req.body;
-        const order_id = `CELETUK-${user.id}-${Date.now()}`;
-        
+        const order_id = `CELETUK-${req.user.id}-${Date.now()}`;
         const parameter = {
-            transaction_details: {
-                order_id: order_id,
-                gross_amount: amount
-            },
-            customer_details: {
-                email: user.email,
-            },
+            transaction_details: { order_id, gross_amount: amount },
+            customer_details: { email: req.user.email },
         };
-
         const transaction = await snap.createTransaction(parameter);
         res.json({ token: transaction.token });
-
     } catch (error) {
-        console.error('Midtrans transaction creation error:', error);
-        res.status(500).json({ error: 'Gagal membuat transaksi Midtrans.' });
+        console.error('Midtrans transaction error:', error);
+        res.status(500).json({ error: 'Failed to create Midtrans transaction.' });
     }
 });
 
-// POST /api/midtrans-notification - Webhook handler for Midtrans
 app.post('/api/midtrans-notification', async (req, res) => {
     try {
-        const notificationJson = req.body;
-        const statusResponse = await snap.transaction.notification(notificationJson);
-        
-        const orderId = statusResponse.order_id;
-        const transactionStatus = statusResponse.transaction_status;
-        const fraudStatus = statusResponse.fraud_status;
+        const statusResponse = await snap.transaction.notification(req.body);
+        const { order_id, transaction_status, fraud_status } = statusResponse;
 
-        console.log(`Received Midtrans notification for order ${orderId}: ${transactionStatus}`);
-
-        if (transactionStatus == 'capture' || transactionStatus == 'settlement') {
-            if (fraudStatus == 'accept') {
-                const userId = parseInt(orderId.split('-')[1]);
-                const user = users.find(u => u.id === userId);
-                if (user) {
-                    user.is_premium = true;
-                    // When upgrading, credits are no longer needed
-                    user.generation_credits = 0;
-                    user.premium_expiry = Date.now() + (30 * 24 * 60 * 60 * 1000); // 30 days from now
-                    console.log(`User ${user.email} (ID: ${userId}) is now premium.`);
-                } else {
-                     console.error(`User with ID ${userId} not found for order ${orderId}.`);
-                }
+        if ((transaction_status === 'capture' || transaction_status === 'settlement') && fraud_status === 'accept') {
+            const userId = parseInt(order_id.split('-')[1], 10);
+            if (!isNaN(userId)) {
+                const expiryTimestamp = Date.now() + (30 * 24 * 60 * 60 * 1000); // 30 days
+                await pool.query(`UPDATE users SET is_premium = TRUE, premium_expiry = $1, generation_credits = 0 WHERE id = $2`, [expiryTimestamp, userId]);
+                console.log(`User ID ${userId} is now premium.`);
             }
         }
         res.sendStatus(200);
@@ -356,58 +308,52 @@ app.post('/api/midtrans-notification', async (req, res) => {
     }
 });
 
-// GET /api/history - Get user's analysis history
-app.get('/api/history', authenticateToken, (req, res) => {
-    const user = users.find(u => u.id === req.user.id);
-    if (!user || !user.is_premium) {
-        return res.status(403).json({ error: 'Fitur riwayat hanya untuk pengguna Premium.' });
+app.get('/api/history', authenticateToken, async (req, res) => {
+    try {
+        const userResult = await pool.query('SELECT is_premium FROM users WHERE id = $1', [req.user.id]);
+        if (!userResult.rows[0]?.is_premium) return res.status(403).json({ error: 'History feature is for Premium users only.' });
+
+        const historyResult = await pool.query('SELECT * FROM history WHERE user_id = $1 ORDER BY created_at DESC', [req.user.id]);
+        const formattedHistory = historyResult.rows.map(item => ({
+            id: item.id,
+            thumbnailDataUrl: item.thumbnail_data_url,
+            resultData: JSON.parse(item.result_data),
+            persona: item.persona,
+            date: new Date(item.created_at).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })
+        }));
+        res.json(formattedHistory);
+    } catch (error) {
+        console.error('Error fetching history:', error);
+        res.status(500).json({ error: 'Failed to load history.' });
     }
-    
-    const userHistory = history[req.user.id] || [];
-    res.json(userHistory);
 });
 
-// POST /api/history - Save a new analysis to history
-app.post('/api/history', authenticateToken, (req, res) => {
-    const user = users.find(u => u.id === req.user.id);
-     if (!user || !user.is_premium) {
-        return res.status(403).json({ error: 'Hanya pengguna Premium yang bisa menyimpan riwayat.' });
+app.post('/api/history', authenticateToken, async (req, res) => {
+    try {
+        const userResult = await pool.query('SELECT is_premium FROM users WHERE id = $1', [req.user.id]);
+        if (!userResult.rows[0]?.is_premium) return res.status(403).json({ error: 'Only Premium users can save history.' });
+
+        const { thumbnailDataUrl, resultData, persona } = req.body;
+        await pool.query('INSERT INTO history (user_id, thumbnail_data_url, result_data, persona) VALUES ($1, $2, $3, $4)', 
+            [req.user.id, thumbnailDataUrl, JSON.stringify(resultData), persona]);
+        res.status(201).json({ message: 'History saved successfully.' });
+    } catch (error) {
+        console.error('Error saving history:', error);
+        res.status(500).json({ error: 'Failed to save history.' });
     }
-    
-    const historyItem = req.body;
-    if (!history[req.user.id]) {
-        history[req.user.id] = [];
-    }
-    
-    history[req.user.id].unshift(historyItem);
-    
-    // Optional: limit history size to prevent memory issues
-    if (history[req.user.id].length > 50) {
-        history[req.user.id].pop();
-    }
-    
-    res.status(201).json({ message: 'Riwayat berhasil disimpan.' });
 });
 
-// Serve static files from 'public' directory (for video background)
-app.use(express.static('public'));
-
-// Serve static files from the 'dist' directory (Vite build output)
+// --- Serve Frontend ---
+// This should be after all API routes
+const __dirname = path.resolve();
 app.use(express.static(path.join(__dirname, 'dist')));
-
-// Final catch-all to serve index.html for any non-API routes.
-// This is essential for single-page applications using client-side routing.
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });
 
+
 // --- Server Start ---
 app.listen(PORT, () => {
     console.log(`Server is running on http://localhost:${PORT}`);
-    if (MIDTRANS_SERVER_KEY.startsWith('YOUR_') || JWT_SECRET_KEY.startsWith('default-')) {
-        console.warn('--- WARNING: Server is using default development keys. Set credentials in a .env file for production. ---');
-    }
-    if(!GEMINI_API_KEY) {
-        console.warn('--- WARNING: GEMINI_API_KEY is not set. AI features will not work. ---');
-    }
+    createTables();
 });
