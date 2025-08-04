@@ -207,7 +207,7 @@ const authenticateToken = (req, res, next) => {
     const token = authHeader && authHeader.split(' ')[1];
     if (token == null) return res.sendStatus(401);
 
-    jwt.verify(token, process.env.JWT_SECRET, (err, userPayload) => {
+    jwt.verify(token, process.env.JWT_SECRET_KEY, (err, userPayload) => {
         if (err) return res.sendStatus(403);
         req.user = userPayload; // Contains { id, email }
         next();
