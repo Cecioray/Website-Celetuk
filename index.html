@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="id" class="scroll-smooth">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -9,7 +9,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
     
     <link rel="stylesheet" href="index.css">
     
@@ -34,7 +34,7 @@
                         logo: ['Playfair Display', 'serif'],
                     },
                     colors: {
-                        'background': '#0B1120',
+                        'background': '#111827',
                         'text-primary': '#E5E7EB',
                         'text-muted': '#9CA3AF',
                         'accent': '#38BDF8',
@@ -46,226 +46,222 @@
         }
     </script>
 </head>
-<body class="font-sans">
-    <div id="backgroundImageContainer"></div>
-
-    <!-- Header -->
-    <header class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 z-20 relative">
-        <nav class="flex justify-between items-center">
-            <a href="#" class="nav-link flex items-center cursor-pointer" data-page="page-home">
-                 <span id="logo-text" class="font-logo text-4xl font-bold text-text-primary">Celetuk</span>
-            </a>
-            <div class="hidden md:flex items-center space-x-10 text-lg text-text-muted">
-                <a href="#" class="nav-link hover:text-accent transition-colors" data-page="page-home">Home</a>
-                <a href="#" class="nav-link hover:text-accent transition-colors" data-page="page-fitur">Features</a>
-                <a href="#" class="nav-link hover:text-accent transition-colors" data-page="page-harga">Pricing</a>
-                <a href="#" id="historyNavButton" class="nav-link hover:text-accent transition-colors hidden" data-page="page-riwayat">Riwayat</a>
-            </div>
-            <div class="hidden md:flex items-center">
-                 <button id="loginNavButton" class="text-lg font-bold text-background bg-accent px-6 py-2 rounded-lg hover:opacity-80 transition">
-                    Login
-                </button>
-                <div id="userProfile" class="hidden relative">
-                    <button id="userProfileButton" class="flex items-center space-x-2">
-                        <span id="userEmail" class="font-medium text-text-primary"></span>
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-text-muted" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+<body class="font-sans overflow-x-hidden">
+    <div class="video-background-container">
+        <video autoplay loop muted playsinline>
+            <source src="/background-video.mp4" type="video/mp4">
+        </video>
+    </div>
+    
+    <div class="content-wrapper">
+        <!-- Header -->
+        <header class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 z-20 relative">
+            <nav class="flex justify-between items-center">
+                <a href="#home" class="nav-link flex items-center cursor-pointer" data-page="page-home">
+                     <span id="logo-text" class="font-logo text-4xl font-bold text-text-primary">Celetuk</span>
+                </a>
+                <div class="hidden md:flex items-center space-x-10 text-lg text-text-muted">
+                    <a href="#home" class="nav-link hover:text-accent transition-colors">Home</a>
+                    <a href="#about" class="nav-link hover:text-accent transition-colors">About Us</a>
+                    <a href="#harga" class="nav-link hover:text-accent transition-colors">Pricing</a>
+                    <a href="#" id="historyNavButton" class="nav-link hover:text-accent transition-colors hidden" data-page="page-riwayat">Riwayat</a>
+                </div>
+                <div class="hidden md:flex items-center">
+                     <button id="loginNavButton" class="btn-primary">
+                        Login
                     </button>
-                    <div id="userDropdown" class="hidden absolute right-0 mt-2 w-48 bg-slate-800 rounded-md shadow-lg py-1 z-50 futuristic-card">
-                        <a href="#" id="logoutButton" class="block px-4 py-2 text-sm text-text-muted hover:bg-slate-700">Logout</a>
-                    </div>
-                </div>
-            </div>
-            <!-- Mobile menu button -->
-            <div class="md:hidden">
-                <button id="mobileMenuButton" class="text-text-primary">
-                    <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
-                </button>
-            </div>
-        </nav>
-    </header>
-
-    <main class="min-h-screen flex flex-col items-center justify-center text-center px-4 pt-12 pb-12 relative z-10">
-        
-        <!-- Page: Home (The App) -->
-        <div id="page-home" class="page-content w-full max-w-7xl mx-auto">
-             <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 lg:gap-20 items-center">
-                <!-- Left Column: Intro -->
-                <div class="text-center lg:text-left relative">
-                    <div class="relative z-10">
-                        <h1 class="text-5xl md:text-6xl lg:text-7xl font-bold font-logo leading-tight text-slate-100">Satu Foto, <br><span class="text-gradient">Ratusan Ide.</span></h1>
-                        <p class="mt-6 text-lg text-slate-300 max-w-xl mx-auto lg:mx-0">Bosan menatap layar, mencari ide caption? Celetuk adalah co-pilot kreatifmu. Upload foto, dan biarkan AI memberikanmu caption jenaka, hashtag yang trending, dan rekomendasi lagu yang pas dalam sekejap.</p>
-                        
-                        <div class="mt-8 space-y-4 text-slate-400 max-w-md mx-auto lg:mx-0">
-                            <div class="flex items-center justify-center lg:justify-start gap-3">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
-                                <span>Caption <strong>Cerdas & Jenaka</strong></span>
-                            </div>
-                            <div class="flex items-center justify-center lg:justify-start gap-3">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
-                                <span>Hashtag <strong>Spesifik & Umum</strong></span>
-                            </div>
-                            <div class="flex items-center justify-center lg:justify-start gap-3">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
-                                <span>Rekomendasi <strong>Lagu Viral</strong></span>
-                            </div>
-                            <div class="flex items-center justify-center lg:justify-start gap-3">
-                                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>
-                                <span>Background <strong>AI Kustom</strong></span>
-                            </div>
+                    <div id="userProfile" class="hidden relative">
+                        <button id="userProfileButton" class="flex items-center space-x-2">
+                            <span id="userEmail" class="font-medium text-text-primary"></span>
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-text-muted" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                        </button>
+                        <div id="userDropdown" class="hidden absolute right-0 mt-2 w-48 bg-slate-800 rounded-md shadow-lg py-1 z-50 futuristic-card">
+                            <a href="#" id="logoutButton" class="block px-4 py-2 text-sm text-text-muted hover:bg-slate-700">Logout</a>
                         </div>
                     </div>
                 </div>
+                <!-- Mobile menu button -->
+                <div class="md:hidden">
+                    <button id="mobileMenuButton" class="text-text-primary">
+                        <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"></path></svg>
+                    </button>
+                </div>
+            </nav>
+        </header>
 
-
-                <!-- Right Column: The App -->
-                <div class="futuristic-card p-6 md:p-8 rounded-3xl w-full">
-                     <!-- This container holds both persona selection and the main app interface -->
-                    <div id="appContainer" class="w-full">
-                        <!-- Persona Selection -->
-                        <div id="personaContainer" class="space-y-4 fade-in">
-                            <h2 class="text-2xl md:text-3xl font-bold font-sans leading-tight text-text-primary text-center">Pilih Gayamu</h2>
-                            <p class="text-base text-text-muted max-w-xl mx-auto text-center">Pilihanmu akan mengkalibrasi AI untuk hasil terbaik.</p>
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
-                                <button data-persona="casual" class="btn-persona text-left p-5 futuristic-card rounded-2xl transition-all duration-300">
-                                    <h3 class="font-bold text-lg text-text-primary">Mode Santai</h3>
-                                    <p class="text-sm text-text-muted">Celetukan jenaka.</p>
-                                </button>
-                                <button data-persona="creator" class="btn-persona text-left p-5 futuristic-card rounded-2xl transition-all duration-300 relative">
-                                    <div class="absolute top-2 right-2 bg-yellow-400 text-yellow-900 text-xs font-bold px-2 py-1 rounded-full premium-tag">PRO</div>
-                                    <h3 class="font-bold text-lg text-text-primary">Mode Kreator</h3>
-                                    <p class="text-sm text-text-muted">Caption cerdas & SEO.</p>
-                                </button>
+        <main class="min-h-screen flex flex-col items-center justify-center text-center px-4 pt-12 pb-12 relative z-10">
+            
+            <div id="main-content-scroll-container">
+                <!-- Section: Home (The App) -->
+                <section id="home" class="page-content w-full max-w-7xl mx-auto flex flex-col items-center gap-16">
+                    <!-- Hero Content -->
+                    <div class="flex flex-col items-center text-center">
+                        <h1 class="hero-title text-5xl md:text-8xl font-extrabold text-white leading-tight">
+                            Satu Foto, <br>
+                            <span class="animated-gradient-text">Ratusan Ide.</span>
+                        </h1>
+                        <p class="hero-description mt-6 text-lg md:text-xl text-gray-400 max-w-3xl mx-auto">
+                            Bosan menatap layar? Biarkan <span class="font-bold text-white">Celetuk</span> menjadi co-pilot kreatifmu. Hasilkan caption jenaka, hashtag trending, dan rekomendasi lagu yang pas dalam sekejap.
+                        </p>
+                        <div class="social-proof-container mt-16 text-center">
+                            <p class="text-sm font-medium text-gray-500 tracking-widest uppercase">HASILKAN KONTEN UNTUK PLATFORM FAVORITMU</p>
+                            <div class="flex items-center justify-center space-x-8 mt-6">
+                               <svg class="h-8 w-8 text-gray-500" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><title>Instagram</title><path d="M12 0C8.74 0 8.333.015 7.053.072 5.775.132 4.905.333 4.14.63c-.789.306-1.459.717-2.126 1.384S.935 3.35.63 4.14C.333 4.905.131 5.775.072 7.053.012 8.333 0 8.74 0 12s.015 3.667.072 4.947c.06 1.277.261 2.148.558 2.913.306.788.717 1.459 1.384 2.126.667.666 1.336 1.079 2.126 1.384.766.296 1.636.499 2.913.558C8.333 23.988 8.74 24 12 24s3.667-.015 4.947-.072c1.277-.06 2.148-.262 2.913-.558.788-.306 1.459-.718 2.126-1.384.666-.667 1.079-1.335 1.384-2.126.296-.765.499-1.636.558-2.913.06-1.28.072-1.687.072-4.947s-.015-3.667-.072-4.947c-.06-1.277-.262-2.149-.558-2.913-.306-.789-.718-1.459-1.384-2.126C21.314.935 20.644.523 19.86.227c-.765-.297-1.636-.499-2.913-.558C15.667.012 15.26 0 12 0zm0 2.16c3.203 0 3.585.016 4.85.071 1.17.055 1.805.249 2.227.415.562.217.96.477 1.382.896.419.42.679.819.896 1.381.164.422.36 1.057.413 2.227.057 1.266.07 1.646.07 4.85s-.015 3.585-.074 4.85c-.056 1.17-.249 1.805-.415 2.227a2.47 2.47 0 01-.896 1.382c-.42.419-.82.679-1.381.896-.422.164-1.057.36-2.227.413-1.266.057-1.646.07-4.85.07s-3.585-.015-4.85-.074c-1.17-.056-1.805-.249-2.227-.415a2.47 2.47 0 01-1.382-.896c-.42-.419-.679-.82-.896-1.381-.164-.422-.36-1.057-.413-2.227-.057-1.266-.07-1.646-.07-4.85s.015-3.585.07-4.85c.055-1.17.249-1.805.415-2.227.217-.562.477-.96.896-1.382.419-.42.819-.679 1.381-.896.422-.164 1.057.36 2.227-.413C8.415 2.172 8.797 2.16 12 2.16zm0 5.482a4.36 4.36 0 100 8.72 4.36 4.36 0 000-8.72zM12 14a2 2 0 110-4 2 2 0 010 4zm6.406-7.873a1.44 1.44 0 100 2.88 1.44 1.44 0 000-2.88z"/></svg>
+                               <svg class="h-8 w-8 text-gray-500" role="img" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" fill="currentColor"><title>TikTok</title><path d="M12.525.02c1.31-.02 2.61-.01 3.91-.02.08 1.53.63 3.09 1.75 4.17 1.12 1.11 2.7 1.62 4.24 1.79v4.03c-1.44-.05-2.89-.35-4.2-.97-.57-.26-1.1-.59-1.62-.93-.01 2.92.01 5.84-.02 8.75-.08 1.4-.54 2.79-1.48 3.96-1.06 1.29-2.61 2.08-4.28 2.39-1.6.28-3.2.18-4.75-.31-.58-.18-1.15-.43-1.68-.72-.12-1.84.03-3.68.64-5.46.32-.88.77-1.7 1.32-2.42.9-.11 1.71-.1 2.59.12.49.12.93.33 1.35.6.01 1.54.01 3.08.01 4.62 0 .44-.01.89.04 1.33.17 1.25.78 2.29 1.9 2.87.89.46 1.93.53 2.89.19.9-.33 1.63-1.02 2.02-1.88.22-.48.31-.99.33-1.51.02-1.07.01-2.14.01-3.21 0-2.14-.02-4.28-.01-6.42-.01-1.39-.49-2.76-1.4-3.86a4.03 4.03 0 0 0-3.3-1.61c-.49-.05-.98-.04-1.47.02-.38.04-.76.13-1.12.27-.08-2.62.02-5.23.01-7.85.34-.02.68-.03 1.02-.02z"/></svg>
+                               <svg class="h-8 w-8 text-gray-500" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor"><title>YouTube</title><path d="M23.498 6.186a3.016 3.016 0 0 0-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 0 0 .502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 0 0 2.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 0 0 2.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
                             </div>
                         </div>
+                    </div>
 
-                        <!-- Main App Interface (hidden initially) -->
-                        <div id="mainAppInterface" class="hidden space-y-6 w-full">
-                            <!-- Theme Input -->
-                            <div id="themeInputContainer">
-                                <label for="theme-input" class="block text-sm font-medium text-text-muted mb-2 text-left">1. (Opsional) Deskripsikan tema untuk background AI <span class="premium-feature-badge">(Premium)</span></label>
-                                <input type="text" id="theme-input" placeholder="Contoh: Hutan berkabut di pagi hari" class="w-full bg-slate-900/30 border border-slate-700 rounded-lg p-3 text-text-primary placeholder-text-muted focus:border-accent focus:ring-0 outline-none transition-colors">
+                    <!-- The App -->
+                    <div class="futuristic-card p-6 md:p-8 rounded-3xl w-full max-w-2xl app-card-container">
+                        <!-- User Status/Credits Display -->
+                        <div id="userStatusContainer" class="hidden text-right -mb-4 -mt-2 pr-2">
+                            <p id="userCredits" class="text-sm text-text-muted"></p>
+                        </div>
+                         <!-- This container holds both persona selection and the main app interface -->
+                        <div id="appContainer" class="w-full">
+                            <!-- Persona Selection -->
+                            <div id="personaContainer" class="space-y-4 fade-in">
+                                <h2 class="text-2xl md:text-3xl font-bold font-sans leading-tight text-text-primary text-center">Pilih Gayamu</h2>
+                                <p class="text-base text-text-muted max-w-xl mx-auto text-center">Pilihanmu akan mengkalibrasi AI untuk hasil terbaik.</p>
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                                    <button data-persona="casual" class="btn-persona text-left p-5 futuristic-card rounded-2xl transition-all duration-300">
+                                        <h3 class="font-bold text-lg text-text-primary">Mode Santai</h3>
+                                        <p class="text-sm text-text-muted">Celetukan jenaka.</p>
+                                    </button>
+                                    <button data-persona="creator" class="btn-persona text-left p-5 futuristic-card rounded-2xl transition-all duration-300 relative">
+                                        <div class="absolute top-2 right-2 bg-yellow-400 text-yellow-900 text-xs font-bold px-2 py-1 rounded-full premium-tag">PRO</div>
+                                        <h3 class="font-bold text-lg text-text-primary">Mode Kreator</h3>
+                                        <p class="text-sm text-text-muted">Caption cerdas & SEO.</p>
+                                    </button>
+                                </div>
                             </div>
 
-                            <!-- Upload Area -->
-                            <div id="uploadContainer">
-                                <label for="file-upload" class="relative flex flex-col items-center justify-center w-full h-56 border-2 border-accent/30 border-dashed rounded-2xl cursor-pointer bg-slate-900/20 hover:bg-slate-900/40 hover:border-accent/50 transition-colors">
-                                    <div class="flex flex-col items-center justify-center pt-5 pb-6">
-                                        <p class="mb-2 text-sm font-semibold text-text-muted">2. Upload Fotomu</p>
-                                        <svg class="w-10 h-10 mb-3 text-accent/50" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-4-4V7a4 4 0 014-4h2l2-2h6l2 2h2a4 4 0 014 4v5a4 4 0 01-4 4H7z"></path><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-                                        <p class="text-sm text-text-muted"><span class="font-semibold text-accent">Klik untuk upload</span> atau seret file</p>
-                                        <p class="text-xs text-text-muted/50">PNG, JPG, atau WEBP</p>
+                            <!-- Main App Interface (hidden initially) -->
+                            <div id="mainAppInterface" class="hidden space-y-6 w-full">
+                                <!-- Theme Input -->
+                                <div id="themeInputContainer">
+                                    <label for="theme-input" class="block text-sm font-medium text-text-muted mb-2 text-left">1. (Opsional) Deskripsikan tema untuk background AI <span class="premium-feature-badge">(Premium)</span></label>
+                                    <input type="text" id="theme-input" placeholder="Contoh: Hutan berkabut di pagi hari" class="w-full bg-slate-900/30 border border-slate-700 rounded-lg p-3 text-text-primary placeholder-text-muted focus:border-accent focus:ring-0 outline-none transition-colors">
+                                </div>
+
+                                <!-- Upload Area -->
+                                <div id="uploadContainer">
+                                    <label for="file-upload" class="relative flex flex-col items-center justify-center w-full h-56 border-2 border-accent/30 border-dashed rounded-2xl cursor-pointer bg-slate-900/20 hover:bg-slate-900/40 hover:border-accent/50 transition-colors">
+                                        <div class="flex flex-col items-center justify-center pt-5 pb-6">
+                                            <p class="mb-2 text-sm font-semibold text-text-muted">2. Upload Fotomu</p>
+                                            <svg class="w-10 h-10 mb-3 text-accent/50" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-4-4V7a4 4 0 014-4h2l2-2h6l2 2h2a4 4 0 014 4v5a4 4 0 01-4 4H7z"></path><path d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                                            <p class="text-sm text-text-muted"><span class="font-semibold text-accent">Klik untuk upload</span> atau seret file</p>
+                                            <p class="text-xs text-text-muted/50">PNG, JPG, atau WEBP</p>
+                                        </div>
+                                        <input id="file-upload" type="file" class="hidden" accept="image/png, image/jpeg, image/webp" />
+                                    </label>
+                                </div>
+                                
+                                 <!-- Image Preview & Analyze Button -->
+                                <div id="imagePreviewContainer" class="hidden text-center space-y-4">
+                                    <img id="imagePreview" src="#" alt="Image Preview" class="max-h-64 w-auto mx-auto rounded-lg shadow-lg border-2 border-slate-700/50">
+                                    <button id="analyzeButton" class="btn-primary text-lg">
+                                        Analisis Foto Ini
+                                    </button>
+                                </div>
+                                
+                                 <!-- Loading Indicator -->
+                                <div id="loaderContainer" class="hidden flex flex-col items-center justify-center space-y-4 pt-10">
+                                    <div class="loader"></div>
+                                    <p id="loaderText" class="text-text-muted mt-4 tracking-widest">MENGANALISIS...</p>
+                                </div>
+                                
+                                <!-- Error Message -->
+                                <div id="errorContainer" class="hidden bg-red-900/50 border border-red-500 text-red-300 px-4 py-3 rounded-lg text-center">
+                                    <p id="errorMessage"></p>
+                                </div>
+                                 <!-- Results Grid -->
+                                <div id="resultsContainer" class="hidden space-y-6 pt-4">
+                                    <div id="resultsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <!-- Result cards will be injected here -->
                                     </div>
-                                    <input id="file-upload" type="file" class="hidden" accept="image/png, image/jpeg, image/webp" />
-                                </label>
-                            </div>
-                            
-                             <!-- Image Preview & Analyze Button -->
-                            <div id="imagePreviewContainer" class="hidden text-center space-y-4">
-                                <img id="imagePreview" src="#" alt="Image Preview" class="max-h-64 w-auto mx-auto rounded-lg shadow-lg border-2 border-slate-700/50">
-                                <button id="analyzeButton" class="btn-primary text-lg">
-                                    Analisis Foto Ini
-                                </button>
-                            </div>
-                            
-                             <!-- Loading Indicator -->
-                            <div id="loaderContainer" class="hidden flex flex-col items-center justify-center space-y-4 pt-10">
-                                <div class="loader"></div>
-                                <p id="loaderText" class="text-text-muted mt-4 tracking-widest">MENGANALISIS...</p>
-                            </div>
-                            
-                            <!-- Error Message -->
-                            <div id="errorContainer" class="hidden bg-red-900/50 border border-red-500 text-red-300 px-4 py-3 rounded-lg text-center">
-                                <p id="errorMessage"></p>
-                            </div>
-                             <!-- Results Grid -->
-                            <div id="resultsContainer" class="hidden space-y-6 pt-4">
-                                <div id="resultsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <!-- Result cards will be injected here -->
+                                    <div id="creatorResultCard" class="hidden">
+                                        <!-- Creator result will be injected here -->
+                                    </div>
+                                    <button id="resetButton" class="btn-secondary">
+                                        Coba Foto Lain
+                                    </button>
                                 </div>
-                                <div id="creatorResultCard" class="hidden">
-                                    <!-- Creator result will be injected here -->
-                                </div>
-                                <button id="resetButton" class="btn-secondary">
-                                    Coba Foto Lain
-                                </button>
                             </div>
                         </div>
                     </div>
+                </section>
+
+                <!-- Section: About Us -->
+                <section id="about" class="page-content py-20 lg:py-32 w-full max-w-4xl mx-auto">
+                    <div class="text-center">
+                        <h2 class="section-title text-4xl md:text-5xl font-bold text-white">Lelah Mikirin Caption? <br><span class="animated-gradient-text">Kami Juga.</span></h2>
+                        <div class="mt-12 text-lg text-text-muted leading-relaxed space-y-6 max-w-3xl mx-auto">
+                            <p>
+                                Kita semua pernah merasakannya. Foto udah perfect, angle pas, pencahayaan oke. Tapi pas mau upload, otak nge-blank. "Caption apa ya?", "Hashtag apa yang rame?", "Lagu apa yang lagi viral?".
+                            </p>
+                            <p>
+                                Berjam-jam scroll cuma buat cari inspirasi, eh malah pusing sendiri dan akhirnya foto bagus cuma tersimpan di galeri.
+                            </p>
+                            <p class="text-text-primary font-semibold">
+                                Celetuk lahir dari keresahan itu. Kami percaya, setiap orang punya cerita untuk dibagikan, tanpa harus terjebak dalam tekanan 'konten sempurna'.
+                            </p>
+                            <p>
+                                Kami bukan cuma asisten AI, kami adalah teman celetukmu, yang siap bantu kamu ngobrol dengan dunia lewat caramu sendiri. Lebih santai, lebih jujur, <span class="font-bold text-accent">lebih kamu</span>.
+                            </p>
+                        </div>
+                    </div>
+                </section>
+                
+                <!-- Section: Pricing -->
+                <section id="harga" class="page-content py-20 lg:py-32 w-full max-w-5xl mx-auto">
+                    <h2 class="section-title text-4xl md:text-5xl font-bold text-white text-center">Paket Harga yang <span class="animated-gradient-text">Sederhana</span></h2>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-12 text-left max-w-4xl mx-auto mt-16">
+                        <!-- Free Tier -->
+                        <div class="feature-card p-8 rounded-2xl flex flex-col">
+                            <h3 class="text-2xl font-bold mb-2 text-accent-light">Gratis</h3>
+                            <p class="text-4xl font-bold text-text-primary mb-4">Rp 0</p>
+                            <ul class="space-y-3 text-text-muted flex-grow mb-8">
+                                <li class="flex items-start"><span class="text-accent mr-2 mt-1">✓</span><span><strong>5 Analisis</strong> per hari</span></li>
+                                <li class="flex items-start"><span class="text-accent mr-2 mt-1">✓</span><span><strong>Mode Santai</strong> untuk ide caption</span></li>
+                                <li class="flex items-start"><span class="text-accent mr-2 mt-1">✓</span><span>Rekomendasi Lagu</span></li>
+                            </ul>
+                            <button class="btn-secondary mt-auto w-full" disabled>Paket Anda Saat Ini</button>
+                        </div>
+                        <!-- Premium Tier -->
+                        <div class="feature-card p-8 rounded-2xl flex flex-col border-2 border-accent">
+                            <h3 class="text-2xl font-bold mb-2 text-accent">Premium</h3>
+                            <p class="text-4xl font-bold text-text-primary mb-4">Rp 10.000<span class="text-lg font-sans font-normal text-text-muted">/bulan</span></p>
+                            <ul class="space-y-3 text-text-muted flex-grow mb-8">
+                                <li class="flex items-start"><span class="text-accent mr-2 mt-1 font-bold">✓</span><span><strong>Analisis Tanpa Batas</strong></span></li>
+                                <li class="flex items-start"><span class="text-accent mr-2 mt-1 font-bold">✓</span><span><strong>Mode Kreator</strong> (SEO & Alt Text)</span></li>
+                                <li class="flex items-start"><span class="text-accent mr-2 mt-1 font-bold">✓</span><span><strong>Background AI Kustom</strong></span></li>
+                                <li class="flex items-start"><span class="text-accent mr-2 mt-1 font-bold">✓</span><span>Dukungan Prioritas</span></li>
+                            </ul>
+                            <button id="upgradeButtonPricing" class="btn-primary mt-auto w-full">Upgrade ke Premium</button>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+
+            <!-- Page: Riwayat (History) - This is a full-page overlay, not part of the scroll -->
+            <div id="page-riwayat" class="page-content hidden w-full max-w-6xl mx-auto fade-in relative">
+                <h1 class="text-4xl md:text-5xl font-bold font-logo leading-tight mb-4 text-text-primary">Riwayat <span class="animated-gradient-text">Analisis Anda</span></h1>
+                <p id="historyEmptyState" class="text-lg text-text-muted max-w-2xl mx-auto mb-12">Anda belum memiliki riwayat. Mulai analisis foto pertama Anda!</p>
+                <div id="historyGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                    <!-- History cards will be injected here -->
                 </div>
             </div>
-        </div>
+            
+        </main>
 
-        <!-- Page: Features -->
-        <div id="page-fitur" class="page-content hidden w-full max-w-4xl mx-auto fade-in relative">
-            <h1 class="text-4xl md:text-5xl font-bold font-logo leading-tight mb-4 text-text-primary">Fitur <span class="text-gradient">Andalan Kami</span></h1>
-            <p class="text-lg text-text-muted max-w-2xl mx-auto mb-12">Kami menggabungkan AI canggih untuk membuat kontenmu bersinar.</p>
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-8 text-left">
-                <div class="futuristic-card p-6 rounded-2xl">
-                    <h3 class="text-xl font-bold mb-2 text-accent">Analisis SEO Mendalam</h3>
-                    <p class="text-text-muted">AI kami mengidentifikasi kata kunci dan topik yang relevan untuk meningkatkan visibilitas kontenmu.</p>
-                </div>
-                <div class="futuristic-card p-6 rounded-2xl">
-                    <h3 class="text-xl font-bold mb-2 text-accent">Caption Jenaka & Strategis</h3>
-                    <p class="text-text-muted">Dapatkan 5 gaya caption berbeda, dari celetukan spontan hingga deskripsi yang ramah SEO.</p>
-                </div>
-                <div class="futuristic-card p-6 rounded-2xl">
-                    <h3 class="text-xl font-bold mb-2 text-accent">Rekomendasi Lagu Kontekstual</h3>
-                    <p class="text-text-muted">AI kami memilih lagu viral yang cocok dengan nuansa fotomu.</p>
-                </div>
-            </div>
-        </div>
-        
-        <!-- Page: Pricing -->
-        <div id="page-harga" class="page-content hidden w-full max-w-4xl mx-auto fade-in relative">
-            <h1 class="text-4xl md:text-5xl font-bold font-logo leading-tight mb-4 text-text-primary">Paket Harga yang <span class="text-gradient">Sederhana</span></h1>
-            <p class="text-lg text-text-muted max-w-2xl mx-auto mb-12">Pilih paket yang paling sesuai dengan kebutuhanmu. Upgrade kapan saja.</p>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-12 text-left max-w-3xl mx-auto">
-                <!-- Free Tier -->
-                <div class="futuristic-card p-8 rounded-2xl flex flex-col">
-                    <h3 class="text-2xl font-bold mb-2 text-accent-light">Gratis</h3>
-                    <p class="text-4xl font-bold text-text-primary mb-4">Rp 0</p>
-                    <ul class="space-y-3 text-text-muted flex-grow mb-8">
-                        <li class="flex items-start"><span class="text-accent mr-2 mt-1">✓</span><span><strong>5 Analisis</strong> per hari</span></li>
-                        <li class="flex items-start"><span class="text-accent mr-2 mt-1">✓</span><span><strong>Mode Santai</strong> untuk ide caption</span></li>
-                        <li class="flex items-start"><span class="text-accent mr-2 mt-1">✓</span><span>Rekomendasi Lagu</span></li>
-                    </ul>
-                    <button class="btn-secondary mt-auto w-full" disabled>Paket Anda Saat Ini</button>
-                </div>
-                <!-- Premium Tier -->
-                <div class="futuristic-card p-8 rounded-2xl flex flex-col border-2 border-accent" style="--color-card-border: var(--color-accent);">
-                    <h3 class="text-2xl font-bold mb-2 text-accent">Premium</h3>
-                    <p class="text-4xl font-bold text-text-primary mb-4">Rp 10.000<span class="text-lg font-sans font-normal text-text-muted">/bulan</span></p>
-                    <ul class="space-y-3 text-text-muted flex-grow mb-8">
-                        <li class="flex items-start"><span class="text-accent mr-2 mt-1 font-bold">✓</span><span><strong>Analisis Tanpa Batas</strong></span></li>
-                        <li class="flex items-start"><span class="text-accent mr-2 mt-1 font-bold">✓</span><span><strong>Mode Kreator</strong> (SEO & Alt Text)</span></li>
-                        <li class="flex items-start"><span class="text-accent mr-2 mt-1 font-bold">✓</span><span><strong>Background AI Kustom</strong></span></li>
-                        <li class="flex items-start"><span class="text-accent mr-2 mt-1 font-bold">✓</span><span>Dukungan Prioritas</span></li>
-                    </ul>
-                    <button id="upgradeButtonPricing" class="btn-primary mt-auto w-full">Upgrade ke Premium</button>
-                </div>
-            </div>
-        </div>
-
-
-        <!-- Page: Riwayat (History) -->
-        <div id="page-riwayat" class="page-content hidden w-full max-w-6xl mx-auto fade-in relative">
-            <h1 class="text-4xl md:text-5xl font-bold font-logo leading-tight mb-4 text-text-primary">Riwayat <span class="text-gradient">Analisis Anda</span></h1>
-            <p id="historyEmptyState" class="text-lg text-text-muted max-w-2xl mx-auto mb-12">Anda belum memiliki riwayat. Mulai analisis foto pertama Anda!</p>
-            <div id="historyGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                <!-- History cards will be injected here -->
-            </div>
-        </div>
-
-        <!-- Page: Blog (Unchanged) -->
-        <div id="page-blog" class="page-content hidden"></div>
-        <!-- Page: Contact (Removed from nav, can be repurposed later) -->
-        <div id="page-kontak" class="page-content hidden"></div>
-        
-    </main>
-
-    <footer class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 text-center text-text-muted text-sm relative z-10">
-        <p>&copy; 2025 Celetuk. All Rights Reserved | Designed & Built by Cecioray</p>
-    </footer>
+        <footer class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 text-center text-text-muted text-sm relative z-10">
+            <p>&copy; 2025 Celetuk. All Rights Reserved | A Project by Cecioray</p>
+        </footer>
+    </div>
 
     <!-- Login/Register Modal -->
     <div id="loginModal" class="hidden modal-overlay">
@@ -344,9 +340,9 @@
         </button>
         
         <nav class="flex flex-col items-center space-y-8 text-2xl font-semibold text-text-primary">
-            <a href="#" class="mobile-nav-link hover:text-accent transition-colors" data-page="page-home">Home</a>
-            <a href="#" class="mobile-nav-link hover:text-accent transition-colors" data-page="page-fitur">Features</a>
-            <a href="#" class="mobile-nav-link hover:text-accent transition-colors" data-page="page-harga">Pricing</a>
+            <a href="#home" class="mobile-nav-link hover:text-accent transition-colors">Home</a>
+            <a href="#about" class="mobile-nav-link hover:text-accent transition-colors">About Us</a>
+            <a href="#harga" class="mobile-nav-link hover:text-accent transition-colors">Pricing</a>
             <a href="#" id="mobileHistoryNavButton" class="mobile-nav-link hover:text-accent transition-colors hidden" data-page="page-riwayat">Riwayat</a>
         </nav>
 
@@ -359,7 +355,9 @@
         </div>
     </div>
 
-
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+    <audio id="global-audio-player" class="hidden"></audio>
     <script type="module" src="/index.tsx"></script>
 </body>
 </html>

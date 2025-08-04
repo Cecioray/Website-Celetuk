@@ -29,7 +29,7 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const SALT_ROUNDS = 10;
 
 // --- In-Memory Database (for demonstration) ---
-const users = []; // Stores user objects: { id, email, password, is_premium, premium_expiry }
+const users = []; // Stores user objects: { id, email, password, is_premium, premium_expiry, generation_credits }
 const history = {}; // Keyed by user ID, stores an array of history items
 let userIdCounter = 1;
 
@@ -66,6 +66,91 @@ const authenticateToken = (req, res, next) => {
 };
 
 
+// --- AI Helper Functions ---
+
+/**
+ * Generates a background image using AI.
+ * @param {string} theme - The user-provided theme for the background.
+ * @returns {Promise<string|null>} - A promise that resolves to a base64 data URL of the image, or null on failure.
+ */
+async function generateAiBackground(theme) {
+    try {
+        const imageResponse = await ai.models.generateImages({
+            model: 'imagen-3.0-generate-002',
+            prompt: `cinematic, high resolution, photorealistic background: ${theme}`,
+            config: {
+                numberOfImages: 1,
+                outputMimeType: 'image/jpeg',
+                aspectRatio: '16:9',
+            },
+        });
+        const base64ImageBytes = imageResponse.generatedImages[0].image.imageBytes;
+        return `data:image/jpeg;base64,${base64ImageBytes}`;
+    } catch (error) {
+        console.error("Gagal membuat background AI:", error);
+        return null; // Return null on failure so Promise.all doesn't reject the whole batch
+    }
+}
+
+/**
+ * Analyzes the image content using AI.
+ * @param {string} base64ImageData - The base64 encoded image data.
+ * @param {'creator'|'casual'} persona - The selected user persona.
+ * @param {string} theme - The optional theme for context.
+ * @returns {Promise<Object>} - A promise that resolves to the parsed JSON analysis from the AI.
+ */
+async function getAiAnalysis(base64ImageData, persona, theme) {
+    const imageData = base64ImageData.split(',')[1];
+    const themeInstruction = theme ? `\nSANGAT PENTING: Sesuaikan semua rekomendasi (caption, hashtag, lagu) dengan tema yang diberikan pengguna: "${theme}".` : "";
+
+    let systemInstruction = "";
+    let responseSchema;
+    const songSchema = {
+        type: Type.OBJECT,
+        properties: {
+            title: { type: Type.STRING, description: 'Judul lagu.' },
+            artist: { type: Type.STRING, description: 'Nama artis.' },
+            album_art_url: { type: Type.STRING, description: 'URL gambar sampul album (dari Spotify, dll). Opsional.' },
+            preview_url: { type: Type.STRING, description: 'URL pratinjau audio 30 detik. Opsional.' }
+        },
+        required: ["title", "artist"]
+    };
+
+    if (persona === 'creator') {
+        systemInstruction = `Anda adalah seorang social media manager profesional yang kreatif dan memahami audiens. Analisis gambar ini untuk menghasilkan konten yang engaging dan optimal.
+1.  **Caption SEO:** Buat caption yang menarik (storytelling singkat, pertanyaan, atau hook) sekitar 25-40 kata. Sisipkan keyword yang relevan secara natural. Hindari bahasa yang terlalu formal atau kaku.
+2.  **Alt Text:** Deskripsi gambar yang jelas, akurat, dan kaya keyword untuk aksesibilitas dan SEO.
+3.  **Hashtag:** 5 hashtag umum (volume tinggi) dan 5 hashtag spesifik (niche, relevan dengan isi gambar).
+4.  **Lagu:** SATU rekomendasi lagu viral (TikTok/Reels) yang cocok. Sertakan judul, artis, dan jika memungkinkan, URL publik untuk gambar sampul album dan pratinjau audio 30 detik.` + themeInstruction;
+        responseSchema = { type: Type.OBJECT, properties: { seoCaption: { type: Type.STRING }, altText: { type: Type.STRING }, hashtags: { type: Type.OBJECT, properties: { umum: { type: Type.ARRAY, items: { type: Type.STRING } }, spesifik: { type: Type.ARRAY, items: { type: Type.STRING } } } }, song: songSchema }, required: ["seoCaption", "altText", "hashtags", "song"] };
+    } else { // casual
+        systemInstruction = `Anda adalah teman 'celetuk' yang jenaka dan observatif. Tugas Anda adalah melihat gambar dan memberikan LIMA ide konten dari sudut pandang yang unik dan 'relatable'.
+- Jika ada subjek (manusia/hewan): Buat caption seolah-olah subjek itu yang berbicara. Gunakan bahasa sehari-hari yang santai (aku/gue). Contoh: jika foto bayi mandi, caption bisa "Om tante, aku udah wangi nih!".
+- Jika tidak ada subjek (pemandangan/makanan): Buat caption dari sudut pandang orang yang mengambil foto, tapi fokus pada pikiran random atau celetukan lucu yang terlintas saat itu.
+- PENTING: Hindari caption yang narsis atau membanggakan diri secara langsung (contoh: "Aku cantik banget", "Lihat deh gayaku"). Fokus pada humor, observasi unik, atau perasaan yang tulus dan relatable.
+Setiap ide harus berisi:
+1.  **Mood:** Vibe atau perasaan (contoh: 'Mode abis mandi', 'Laper tengah malem').
+2.  **Caption:** Super singkat dan jenaka dari POV yang ditentukan.
+3.  **Hashtags:** 2-3 hashtag yang mendukung mood.
+4.  **Lagu:** Satu lagu viral (TikTok/Reels) yang cocok dengan mood. Sertakan judul, artis, dan jika memungkinkan, URL publik untuk gambar sampul album dan pratinjau audio 30 detik.` + themeInstruction;
+        responseSchema = { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { mood: { type: Type.STRING }, caption: { type: Type.STRING }, hashtags: { type: Type.ARRAY, items: { type: Type.STRING } }, song: songSchema }, required: ["mood", "caption", "hashtags", "song"] } };
+    }
+
+    const imagePart = { inlineData: { mimeType: 'image/jpeg', data: imageData } };
+    const textPart = { text: "Analisis gambar ini dan berikan rekomendasi konten." };
+
+    const analysisResponse = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: { parts: [textPart, imagePart] },
+        config: { systemInstruction: systemInstruction, responseMimeType: "application/json", responseSchema: responseSchema },
+    });
+    
+    const jsonText = analysisResponse.text.trim();
+    const parsedJson = JSON.parse(jsonText);
+    return Array.isArray(parsedJson) ? parsedJson : [parsedJson];
+}
+
+
 // --- API Endpoints ---
 
 // GET /api/config - Provides the Midtrans Client Key to the frontend
@@ -92,7 +177,8 @@ app.post('/api/register', async (req, res) => {
             email: email,
             password: hashedPassword,
             is_premium: false,
-            premium_expiry: null
+            premium_expiry: null,
+            generation_credits: 5 // Free trial credits for new users
         };
         users.push(newUser);
 
@@ -149,7 +235,7 @@ app.get('/api/me', authenticateToken, (req, res) => {
 // POST /api/analyze - Main endpoint for AI analysis and background generation
 app.post('/api/analyze', authenticateToken, async (req, res) => {
     if (!ai) {
-        return res.status(500).json({ error: 'Layanan AI tidak dikonfigurasi di server.' });
+        return res.status(503).json({ error: 'Layanan AI tidak dikonfigurasi di server.' });
     }
 
     try {
@@ -159,78 +245,48 @@ app.post('/api/analyze', authenticateToken, async (req, res) => {
         if (!userRecord) {
             return res.status(404).json({ error: 'Pengguna tidak ditemukan.' });
         }
+        
+        // Check if user has generation credits or is premium
+        const canGenerate = userRecord.is_premium || (userRecord.generation_credits && userRecord.generation_credits > 0);
+        
+        if (!canGenerate) {
+            return res.status(403).json({ 
+                error: 'Kuota gratis Anda telah habis. Silakan upgrade ke Pro untuk melanjutkan.',
+                quotaExceeded: true 
+            });
+        }
+        
         if (!base64ImageData || !persona) {
             return res.status(400).json({ error: 'Data gambar dan persona diperlukan.' });
         }
-
-        let backgroundImageUrl = null;
-        if (theme && userRecord.is_premium) {
-            try {
-                const imageResponse = await ai.models.generateImages({
-                    model: 'imagen-3.0-generate-002',
-                    prompt: `cinematic, high resolution, photorealistic background: ${theme}`,
-                    config: {
-                      numberOfImages: 1,
-                      outputMimeType: 'image/jpeg',
-                      aspectRatio: '16:9',
-                    },
-                });
-                const base64ImageBytes = imageResponse.generatedImages[0].image.imageBytes;
-                backgroundImageUrl = `data:image/jpeg;base64,${base64ImageBytes}`;
-            } catch (error) {
-                console.error("Gagal membuat background AI:", error);
-            }
-        }
         
-        let systemInstruction = "";
-        let responseSchema;
-        const imageData = base64ImageData.split(',')[1];
-        const themeInstruction = theme ? `\nSANGAT PENTING: Sesuaikan semua rekomendasi (caption, hashtag, lagu) dengan tema yang diberikan pengguna: "${theme}".` : "";
+        // Create promises for both AI tasks to run them in parallel
+        const analysisPromise = getAiAnalysis(base64ImageData, persona, theme);
+        const backgroundPromise = (theme && userRecord.is_premium)
+            ? generateAiBackground(theme)
+            : Promise.resolve(null);
 
-        if (persona === 'creator') {
-            systemInstruction = `Anda adalah seorang ahli strategi SEO dan media sosial yang sangat teliti. Misi Anda adalah mengekstrak setiap detail dari gambar untuk menghasilkan konten yang paling relevan dan berkinerja tinggi. Ikuti langkah-langkah berikut dengan saksama:
-1.  **Analisis Visual Komprehensif (Internal):** Lakukan analisis diam-diam terhadap gambar. Identifikasi:
-    *   **Subjek Utama:** Siapa atau apa subjeknya? (misal: bayi tertawa, wanita karir, pasangan di pantai, makanan, hewan peliharaan).
-    *   **Emosi & Suasana:** Apa emosi yang terpancar? (misal: kebahagiaan, nostalgia, petualangan, ketenangan). Apa suasana keseluruhannya? (misal: ceria, profesional, romantis).
-    *   **Aktivitas & Konteks:** Apa yang sedang terjadi di dalam foto? (misal: merayakan ulang tahun, bekerja di laptop, menikmati matahari terbenam).
-2.  **Buat Caption SEO-Friendly:** Berdasarkan analisis mendalam dari Langkah 1, tulis caption deskriptif (sekitar 20-30 kata) yang natural, memasukkan keyword relevan yang berhubungan dengan subjek, emosi, dan aktivitas. Akhiri dengan ajakan (call-to-action) yang sesuai.
-3.  **Buat Alt Text:** Tulis deskripsi Alt Text yang jelas dan ringkas, menjelaskan secara akurat apa yang ada di dalam gambar sesuai analisis.
-4.  **Riset Hashtag:** Berikan 2 set hashtag yang sangat relevan: 5 hashtag 'umum' dengan volume tinggi, dan 5 hashtag 'spesifik' yang lebih niche dan langsung berkaitan dengan detail di foto.
-5.  **Pilih Lagu:** Rekomendasikan SATU lagu yang sedang viral atau populer di TikTok/Reels. Lagu ini harus secara emosional dan tematis sangat cocok dengan suasana dan subjek dari analisis di Langkah 1.` + themeInstruction;
-            responseSchema = { type: Type.OBJECT, properties: { seoCaption: { type: Type.STRING }, altText: { type: Type.STRING }, hashtags: { type: Type.OBJECT, properties: { umum: { type: Type.ARRAY, items: { type: Type.STRING } }, spesifik: { type: Type.ARRAY, items: { type: Type.STRING } } } }, song: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, artist: { type: Type.STRING } }, required: ["title", "artist"] } }, required: ["seoCaption", "altText", "hashtags", "song"] };
-        } else { // casual
-            systemInstruction = `Anda adalah 'jiwa' dari foto ini. Anda akan berbicara dari sudut pandang subjek utama. Kepribadian Anda adalah Gen Z: keren, ekspressif, dan seringkali reflektif. Gaya bicaramu santai, campur-campur bahasa Indonesia dan Inggris.
-Analisis gambar ini dari sudut pandang PERTAMA (first-person). Sebelum menulis, pikirkan dulu:
--   **Siapa/Apa aku?** Apakah aku bayi yang baru lihat dunia? Seekor kucing malas? Sepiring makanan enak? Atau seorang dewasa yang lagi galau?
--   **Apa yang aku rasakan?** Apa 'vibe' atau emosi yang paling kuat? (Contoh: super happy, kangen, lagi mikir keras, lucu, aesthetic).
--   **Apa yang sedang terjadi?** Apa yang sedang aku lakukan? (Contoh: lagi liburan, baru bangun tidur, lagi makan enak).
-Setelah memahami itu semua, berikan LIMA ide konten yang berbeda.
-ATURAN WAJIB, HARUS DIPATUHI:
-1.  **POV & Caption:** Kamu ADALAH subjek di foto. Semua caption harus dari sudut pandangmu (menggunakan kata seperti "gue", "aku", "I", "my"). Caption WAJIB SUPER SINGKAT (MAKSIMAL 8 KATA).
-2.  **Mood:** Ini adalah nama vibe atau perasaanmu, berdasarkan analisismu. Harus kreatif dan slang (contoh: 'Weekend chill mode', 'Golden hour thoughts', 'Food coma incoming').
-3.  **LARANGAN:** Dilarang keras bertingkah seperti AI yang menganalisis. Dilarang mengomentari "orang di foto". Kamu ADALAH orang itu.
-4.  **Hashtags & Lagu:** Hashtag (2-3) harus singkat dan mendukung mood-mu. Lagu HARUS viral atau populer di TikTok/Reels dan benar-benar cocok dengan perasaanmu di foto.
-${themeInstruction}`;
-            responseSchema = { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { mood: { type: Type.STRING }, caption: { type: Type.STRING }, hashtags: { type: Type.ARRAY, items: { type: Type.STRING } }, song: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, artist: { type: Type.STRING } }, required: ["title", "artist"] } }, required: ["mood", "caption", "hashtags", "song"] } };
+        // Await both promises to complete
+        const [analysisResult, backgroundImageUrl] = await Promise.all([analysisPromise, backgroundPromise]);
+        
+        if (!analysisResult || (Array.isArray(analysisResult) && analysisResult.length === 0)) {
+            throw new Error("Respons AI tidak valid atau kosong. Coba lagi.");
         }
 
-        const imagePart = { inlineData: { mimeType: 'image/jpeg', data: imageData } };
-        const textPart = { text: "Analisis gambar ini dan berikan rekomendasi konten." };
-
-        const analysisResponse = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: { parts: [textPart, imagePart] },
-            config: { systemInstruction: systemInstruction, responseMimeType: "application/json", responseSchema: responseSchema },
-        });
-
-        const jsonText = analysisResponse.text.trim();
-        const parsedJson = JSON.parse(jsonText);
-        const analysisResult = Array.isArray(parsedJson) ? parsedJson : [parsedJson];
+        // Decrement credits if user is not premium
+        if (!userRecord.is_premium) {
+            userRecord.generation_credits = Math.max(0, userRecord.generation_credits - 1);
+            console.log(`User ${userRecord.email} used a credit. Remaining: ${userRecord.generation_credits}`);
+        }
 
         res.json({ analysis: analysisResult, background: backgroundImageUrl });
+
     } catch (error) {
         console.error("Error in /api/analyze:", error);
-        res.status(500).json({ error: 'Gagal menganalisis konten.' });
+        if (error instanceof SyntaxError) {
+             return res.status(500).json({ error: 'Gagal mem-parsing respons dari AI. Coba lagi.' });
+        }
+        res.status(500).json({ error: 'Gagal menganalisis konten. Server AI mungkin sedang sibuk.' });
     }
 });
 
@@ -283,6 +339,8 @@ app.post('/api/midtrans-notification', async (req, res) => {
                 const user = users.find(u => u.id === userId);
                 if (user) {
                     user.is_premium = true;
+                    // When upgrading, credits are no longer needed
+                    user.generation_credits = 0;
                     user.premium_expiry = Date.now() + (30 * 24 * 60 * 60 * 1000); // 30 days from now
                     console.log(`User ${user.email} (ID: ${userId}) is now premium.`);
                 } else {
@@ -329,6 +387,9 @@ app.post('/api/history', authenticateToken, (req, res) => {
     
     res.status(201).json({ message: 'Riwayat berhasil disimpan.' });
 });
+
+// Serve static files from 'public' directory (for video background)
+app.use(express.static('public'));
 
 // Serve static files from the 'dist' directory (Vite build output)
 app.use(express.static(path.join(__dirname, 'dist')));

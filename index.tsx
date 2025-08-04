@@ -1,5 +1,3 @@
-
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -8,6 +6,10 @@
 export {};
 
 // NOTE: The GoogleGenAI import has been removed from the client-side code.
+
+// --- Type Declarations for CDN Libraries ---
+declare const gsap: any;
+declare const ScrollTrigger: any;
 
 // TypeScript type augmentation for Midtrans Snap.js
 declare global {
@@ -18,11 +20,14 @@ declare global {
 }
 
 // --- DOM Element Selection ---
-const allPages = document.querySelectorAll('.page-content') as NodeListOf<HTMLElement>;
+const mainContentScrollContainer = document.getElementById('main-content-scroll-container') as HTMLElement;
+const pageRiwayat = document.getElementById('page-riwayat') as HTMLElement;
 const navLinks = document.querySelectorAll('.nav-link') as NodeListOf<HTMLAnchorElement>;
 const personaContainer = document.getElementById('personaContainer') as HTMLElement;
 const personaButtons = document.querySelectorAll('.btn-persona') as NodeListOf<HTMLButtonElement>;
 const appContainer = document.getElementById('appContainer') as HTMLElement;
+const userStatusContainer = document.getElementById('userStatusContainer') as HTMLElement;
+const userCredits = document.getElementById('userCredits') as HTMLParagraphElement;
 const mainAppInterface = document.getElementById('mainAppInterface') as HTMLElement;
 const uploadContainer = document.getElementById('uploadContainer') as HTMLElement;
 const themeInput = document.getElementById('theme-input') as HTMLInputElement;
@@ -38,7 +43,7 @@ const errorMessage = document.getElementById('errorMessage') as HTMLParagraphEle
 const resultsGrid = document.getElementById('resultsGrid') as HTMLElement;
 const creatorResultCard = document.getElementById('creatorResultCard') as HTMLElement;
 const resetButton = document.getElementById('resetButton') as HTMLButtonElement;
-const backgroundImageContainer = document.getElementById('backgroundImageContainer') as HTMLElement;
+
 
 // --- Subscription Modal Selectors ---
 const subscriptionModal = document.getElementById('subscriptionModal') as HTMLElement;
@@ -85,6 +90,9 @@ const mobileUserProfile = document.getElementById('mobileUserProfile') as HTMLEl
 const mobileUserEmail = document.getElementById('mobileUserEmail') as HTMLParagraphElement;
 const mobileLogoutButton = document.getElementById('mobileLogoutButton') as HTMLButtonElement;
 
+// --- Audio Player ---
+const globalAudioPlayer = document.getElementById('global-audio-player') as HTMLAudioElement;
+
 
 // --- State Variables ---
 let base64ImageData: string | null = null;
@@ -93,6 +101,7 @@ let currentUser: User | null = null;
 let isLoginMode = true; // For login/register modal
 let midtransClientKey: string | null = null;
 const API_BASE_URL = ''; // Now served from same origin
+let currentPlayingButton: HTMLButtonElement | null = null;
 
 
 // --- Type Definitions ---
@@ -101,6 +110,7 @@ interface User {
     email: string;
     is_premium: boolean | number;
     premium_expiry?: number; // timestamp
+    generation_credits?: number;
 }
 
 interface HistoryItem {
@@ -114,6 +124,8 @@ interface HistoryItem {
 interface Song {
     title: string;
     artist: string;
+    album_art_url?: string;
+    preview_url?: string;
 }
 
 interface CasualResult {
@@ -148,7 +160,7 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
 
     const response = await fetch(url, { ...options, headers });
 
-    if (response.status === 401 || response.status === 403) {
+    if (response.status === 401 || (response.status === 403 && !(await response.clone().json()).quotaExceeded)) {
         handleLogout(); // Token is invalid or expired, log out user
         throw new Error('Sesi Anda telah berakhir. Silakan login kembali.');
     }
@@ -256,18 +268,22 @@ function handleLogout() {
 // --- Core Functions ---
 
 /**
- * Shows a specific page by its ID and hides all others.
- * @param pageId The ID of the page to show.
+ * Shows a specific page view (either the main scrolling content or the history page).
+ * @param pageId The ID of the page/view to show.
  */
 function showPage(pageId: string) {
-    allPages.forEach(page => {
-        page.classList.add('hidden');
-    });
-    const activePage = document.getElementById(pageId);
-    if (activePage) {
-        activePage.classList.remove('hidden');
-        if (pageId === 'page-riwayat') {
-            renderHistoryPage();
+    mainContentScrollContainer.classList.add('hidden');
+    pageRiwayat.classList.add('hidden');
+
+    if (pageId === 'page-riwayat') {
+        pageRiwayat.classList.remove('hidden');
+        renderHistoryPage();
+    } else {
+        // Default to showing the main scrollable content
+        mainContentScrollContainer.classList.remove('hidden');
+        if(pageId === 'page-home') {
+             const homeElement = document.getElementById('home');
+             homeElement?.scrollIntoView({ behavior: 'smooth' });
         }
     }
 }
@@ -291,7 +307,6 @@ function resetUI() {
     userPersona = null;
     imagePreview.src = '#';
     personaButtons.forEach(btn => btn.classList.remove('selected'));
-    backgroundImageContainer.innerHTML = '';
     
     updatePremiumUI();
 }
@@ -317,6 +332,15 @@ function updateUserUI() {
         mobileLoginButton.classList.add('hidden');
         mobileUserProfile.classList.remove('hidden');
         mobileUserEmail.textContent = currentUser.email;
+
+        // User Status/Credits Display
+        userStatusContainer.classList.remove('hidden');
+        if (currentUser.is_premium) {
+            userCredits.innerHTML = `Status: <span class="font-bold text-accent">Premium</span>`;
+        } else {
+            const credits = currentUser.generation_credits ?? 0;
+            userCredits.innerHTML = `Sisa Kuota: <span class="font-bold text-accent-light">${credits}</span>`;
+        }
     } else {
         // Desktop
         loginNavButton.classList.remove('hidden');
@@ -327,6 +351,9 @@ function updateUserUI() {
         mobileLoginButton.classList.remove('hidden');
         mobileUserProfile.classList.add('hidden');
         mobileHistoryNavButton.classList.add('hidden');
+        
+        // Hide status display
+        userStatusContainer.classList.add('hidden');
     }
     updatePremiumUI();
 }
@@ -561,20 +588,22 @@ async function handleAnalyzeClick() {
 
         if (!response.ok) {
             const errorData = await response.json();
+            if (response.status === 403 && errorData.quotaExceeded) {
+                // Specific handling for quota error: show subscription modal
+                openSubscriptionModal();
+                // Reset UI from loading back to preview
+                loaderContainer.classList.add('hidden');
+                imagePreviewContainer.classList.remove('hidden');
+                // Return early, we've handled this specific case.
+                return;
+            }
             throw new Error(errorData.error || "Gagal mendapatkan respons dari server.");
         }
 
         const { analysis, background } = await response.json();
 
-        if (background) {
-            const img = document.createElement('img');
-            img.src = background;
-            img.onload = () => {
-                backgroundImageContainer.innerHTML = '';
-                backgroundImageContainer.appendChild(img);
-                setTimeout(() => img.classList.add('loaded'), 50);
-            };
-        }
+        // Refresh user data to show updated credit count immediately
+        await checkAuthStatus();
 
         if (!analysis || (Array.isArray(analysis) && analysis.length === 0)) {
             throw new Error("Respons AI tidak valid atau kosong. Coba lagi.");
@@ -591,6 +620,62 @@ async function handleAnalyzeClick() {
         loaderContainer.classList.add('hidden');
         imagePreviewContainer.classList.remove('hidden');
     }
+}
+
+// --- Audio Player Logic ---
+
+const playIconSVG = `<svg class="w-6 h-6 text-background" fill="currentColor" viewBox="0 0 20 20"><path d="M4.018 15.39a.5.5 0 00.724.448l9.582-5.476a.5.5 0 000-.896L4.742 4.166a.5.5 0 00-.724.448v10.776z"></path></svg>`;
+const pauseIconSVG = `<svg class="w-6 h-6 text-background" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 4.5a.5.5 0 00-.5.5v10a.5.5 0 00.5.5h2a.5.5 0 00.5-.5v-10a.5.5 0 00-.5-.5h-2zm7 0a.5.5 0 00-.5.5v10a.5.5 0 00.5.5h2a.5.5 0 00.5-.5v-10a.5.5 0 00-.5-.5h-2z" clip-rule="evenodd"></path></svg>`;
+
+function handlePlayPauseClick(button: HTMLButtonElement) {
+    const previewUrl = button.dataset.previewUrl;
+    if (!previewUrl) return;
+
+    if (currentPlayingButton && currentPlayingButton !== button) {
+        resetPlayButton(currentPlayingButton);
+    }
+
+    if (globalAudioPlayer.src === previewUrl && !globalAudioPlayer.paused) {
+        globalAudioPlayer.pause();
+    } else {
+        globalAudioPlayer.src = previewUrl;
+        globalAudioPlayer.play().catch(e => console.error("Error playing audio:", e));
+        currentPlayingButton = button;
+        setPauseButton(button);
+    }
+}
+
+function resetPlayButton(button: HTMLButtonElement | null) {
+    if (button) button.innerHTML = playIconSVG;
+}
+
+function setPauseButton(button: HTMLButtonElement) {
+    button.innerHTML = pauseIconSVG;
+}
+
+function setupAudioPlayers() {
+    const playButtons = document.querySelectorAll('.play-pause-btn');
+    playButtons.forEach(button => {
+        button.addEventListener('click', () => handlePlayPauseClick(button as HTMLButtonElement));
+    });
+
+    globalAudioPlayer.addEventListener('ended', () => {
+        resetPlayButton(currentPlayingButton);
+        currentPlayingButton = null;
+    });
+
+    globalAudioPlayer.addEventListener('pause', () => {
+        if(globalAudioPlayer.currentTime > 0 && !globalAudioPlayer.ended) { // Manual pause
+            resetPlayButton(currentPlayingButton);
+            currentPlayingButton = null;
+        }
+    });
+
+     globalAudioPlayer.addEventListener('play', () => {
+        if (currentPlayingButton) {
+            setPauseButton(currentPlayingButton);
+        }
+    });
 }
 
 // --- UI Rendering ---
@@ -617,16 +702,39 @@ function displayResults(results: CreatorResult[] | CasualResult[], currentPerson
     const container = currentPersona === 'creator' ? creatorResultCard : resultsGrid;
     container.innerHTML = buildResultCardsHTML(results, currentPersona);
     container.classList.remove('hidden');
+    setupAudioPlayers();
 }
 
+function buildSongPlayerHTML(song?: Song): string {
+    if (!song) return '';
+
+    const songTitle = song.title || "Lagu Tidak Ditemukan";
+    const songArtist = song.artist || "AI sedang mencari...";
+    const searchQuery = encodeURIComponent(`${songTitle} ${songArtist}`);
+    const spotifyLink = `https://open.spotify.com/search/${searchQuery}`;
+    const albumArt = song.album_art_url || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23475569'%3E%3Cpath d='M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z'/%3E%3C/svg%3E";
+    
+    const actionHTML = song.preview_url ?
+        `<button class="play-pause-btn p-3 rounded-full bg-accent hover:bg-accent-light transition-transform hover:scale-110 focus:outline-none flex-shrink-0" data-preview-url="${song.preview_url}" aria-label="Putar cuplikan">
+            ${playIconSVG}
+        </button>` :
+        `<a href="${spotifyLink}" target="_blank" class="btn-primary-small ml-4 flex-shrink-0 no-underline">Cari</a>`;
+
+    return `
+        <div class="flex items-center space-x-4 mt-2 p-3 rounded-xl bg-slate-900/50">
+            <img src="${albumArt}" alt="Album Art for ${songTitle}" class="w-16 h-16 rounded-lg object-cover shadow-md flex-shrink-0" crossOrigin="anonymous">
+            <div class="flex-grow text-left overflow-hidden">
+                <p class="font-bold text-slate-50 truncate">${songTitle}</p>
+                <p class="text-sm text-slate-400 truncate">${songArtist}</p>
+            </div>
+            ${actionHTML}
+        </div>
+    `;
+}
 
 function buildResultCardsHTML(results: CreatorResult[] | CasualResult[], persona: 'creator' | 'casual' | null): string {
     if (persona === 'creator' && results.length > 0) {
         const item = results[0] as CreatorResult;
-        const songTitle = item.song?.title || "Lagu Tidak Ditemukan";
-        const songArtist = item.song?.artist || "AI sedang mencari...";
-        const searchQuery = encodeURIComponent(`${songTitle} ${songArtist}`);
-        const spotifyLink = `https://open.spotify.com/search/${searchQuery}`;
         const hashtagsUmum = item.hashtags?.umum || [];
         const hashtagsSpesifik = item.hashtags?.spesifik || [];
         const combinedHashtags = [...hashtagsUmum, ...hashtagsSpesifik].map(h => `#${h}`).join(' ');
@@ -678,22 +786,12 @@ function buildResultCardsHTML(results: CreatorResult[] | CasualResult[], persona
             <!-- Song -->
             <div>
                 <h3 class="text-xl font-bold mb-2 text-slate-100 flex items-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" /></svg>Rekomendasi Lagu</h3>
-                <div class="flex items-center justify-between">
-                    <div class="text-left flex-grow">
-                        <p class="font-bold text-slate-50">${songTitle}</p>
-                        <p class="text-sm text-slate-400">${songArtist}</p>
-                    </div>
-                     <a href="${spotifyLink}" target="_blank" class="btn-primary-small ml-4 flex-shrink-0 no-underline">Cari</a>
-                </div>
+                ${buildSongPlayerHTML(item.song)}
             </div>
         </div>`;
     } else if (persona === 'casual') {
         return (results as CasualResult[]).map(item => {
-            const songTitle = item.song?.title || "Lagu Tidak Ditemukan";
-            const songArtist = item.song?.artist || "AI sedang mencari...";
             const hashtags = item.hashtags || [];
-            const searchQuery = encodeURIComponent(`${songTitle} ${songArtist}`);
-            const spotifyLink = `https://open.spotify.com/search/${searchQuery}`;
             
             return `
                 <div class="space-y-4 futuristic-card p-5 rounded-2xl shadow-lg text-left">
@@ -714,13 +812,7 @@ function buildResultCardsHTML(results: CreatorResult[] | CasualResult[], persona
                     <hr class="border-slate-700/50">
                     <div>
                         <h3 class="text-base font-semibold text-slate-400 mb-2">🎵 Lagu</h3>
-                        <div class="flex items-center justify-between">
-                            <div class="text-left flex-grow">
-                                <p class="font-bold text-slate-50">${songTitle}</p>
-                                <p class="text-sm text-slate-400">${songArtist}</p>
-                            </div>
-                            <a href="${spotifyLink}" target="_blank" class="btn-primary-small ml-4 flex-shrink-0 no-underline">Cari</a>
-                        </div>
+                        ${buildSongPlayerHTML(item.song)}
                     </div>
                 </div>`;
         }).join('');
@@ -816,6 +908,7 @@ async function renderHistoryPage() {
 function showHistoryDetail(item: HistoryItem) {
     historyDetailContent.innerHTML = buildResultCardsHTML(item.resultData, item.persona);
     historyDetailModal.classList.remove('hidden');
+    setupAudioPlayers();
 }
 
 function closeHistoryDetailModal() {
@@ -843,6 +936,99 @@ function createThumbnail(dataUrl: string, maxWidth: number): Promise<string> {
     });
 }
 
+/**
+ * Handles all navigation clicks (desktop and mobile) to scroll smoothly
+ * or switch between the main view and history view.
+ * @param event The click event.
+ * @param isMobile Whether the click is from the mobile menu.
+ */
+function handleNavigation(event: Event, isMobile: boolean = false) {
+    event.preventDefault();
+    const link = event.currentTarget as HTMLAnchorElement;
+    const pageId = link.dataset.page;
+    const anchor = link.getAttribute('href');
+
+    if (isMobile) {
+        closeMobileMenu();
+    }
+
+    if (pageId) {
+        // It's a full-page switch, like for Riwayat or back to Home.
+        showPage(pageId);
+    } else if (anchor && anchor.startsWith('#')) {
+        // It's an anchor scroll link.
+        const targetElement = document.querySelector(anchor);
+
+        // Ensure the main scroll container is visible before trying to scroll.
+        // This is crucial for when we are on the history page.
+        if (mainContentScrollContainer.classList.contains('hidden')) {
+            showPage('page-home'); // This switches to the main content view
+             // We need to wait a moment for the DOM to update before scrolling.
+            setTimeout(() => {
+                targetElement?.scrollIntoView({ behavior: 'smooth' });
+            }, 150);
+        } else {
+             if (targetElement) {
+                targetElement.scrollIntoView({ behavior: 'smooth' });
+            }
+        }
+    }
+}
+
+
+// --- Animation & Interaction Setup ---
+function setupAnimations() {
+    gsap.registerPlugin(ScrollTrigger);
+
+    // --- GSAP Defaults for cleaner code ---
+    gsap.defaults({
+        duration: 0.8,
+        ease: "power3.out",
+    });
+
+    // --- Initial Load Animations ---
+    // Using a timeline for better control and sequencing
+    const tl = gsap.timeline({ defaults: { opacity: 0, y: 20 } });
+    tl.from(".hero-title", { delay: 0.2, duration: 1 })
+      .from(".hero-description", {}, "-=0.8")
+      .from(".social-proof-container", {}, "-=0.8")
+      .from(".app-card-container", {}, "-=0.8");
+
+    // --- Scroll-triggered Animations for sections ---
+    const sections = document.querySelectorAll('#about, #harga');
+    sections.forEach(section => {
+        const sectionTitle = section.querySelector('.section-title');
+        const featureCards = section.querySelectorAll('.feature-card');
+
+        // Animate section title
+        if (sectionTitle) {
+            gsap.from(sectionTitle, {
+                scrollTrigger: {
+                    trigger: section,
+                    start: "top 80%", // Trigger when section top hits 80% from viewport top
+                    toggleActions: "play none none none", // Play once on enter
+                },
+                opacity: 0,
+                y: 30,
+            });
+        }
+        
+        // Animate feature cards
+        if (featureCards.length > 0) {
+            gsap.from(featureCards, {
+                scrollTrigger: {
+                    trigger: section,
+                    start: "top 70%", // Trigger a bit later for cards
+                    toggleActions: "play none none none",
+                },
+                opacity: 0,
+                y: 30,
+                stagger: 0.15,
+            });
+        }
+    });
+}
+
 
 // --- Initialization ---
 async function init() {
@@ -866,14 +1052,7 @@ async function init() {
 
     // Set up navigation
     navLinks.forEach(link => {
-        link.addEventListener('click', (event) => {
-            event.preventDefault();
-            const pageId = link.dataset.page;
-            if (pageId) {
-                if(pageId === 'page-home') resetUI();
-                showPage(pageId);
-            }
-        });
+        link.addEventListener('click', (event) => handleNavigation(event, false));
     });
 
     // App logic event listeners
@@ -884,7 +1063,14 @@ async function init() {
 
     fileInput.addEventListener('change', handleFileSelect);
     analyzeButton.addEventListener('click', handleAnalyzeClick);
-    resetButton.addEventListener('click', resetUI);
+    resetButton.addEventListener('click', () => {
+         // When resetting, scroll the app card back into view if it's off-screen
+        const appCard = document.querySelector('.app-card-container');
+        if(appCard) {
+            appCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        setTimeout(resetUI, 300);
+    });
     
     // Auth listeners
     loginNavButton.addEventListener('click', openLoginModal);
@@ -910,15 +1096,7 @@ async function init() {
     closeMobileMenuButton.addEventListener('click', closeMobileMenu);
 
     mobileNavLinks.forEach(link => {
-        link.addEventListener('click', (event) => {
-            event.preventDefault();
-            const pageId = link.dataset.page;
-            if (pageId) {
-                if (pageId === 'page-home') resetUI();
-                showPage(pageId);
-                closeMobileMenu();
-            }
-        });
+         link.addEventListener('click', (event) => handleNavigation(event, true));
     });
     
     mobileLoginButton.addEventListener('click', () => {
@@ -935,6 +1113,9 @@ async function init() {
     // Initial UI state
     showPage('page-home');
     resetUI();
+
+    // Setup animations and interactions
+    setupAnimations();
 }
 
 init();

@@ -4,80 +4,51 @@
  */
 
 :root {
-    --color-bg-start: #0B1120;       /* Dark Navy */
+    --color-bg-start: #111827;       /* Dark Gray-Blue */
     --color-bg-end: #111827;         /* Dark Gray-Blue */
     --color-text: #E5E7EB;           /* Light Gray */
     --color-text-muted: #9CA3AF;     /* Medium Gray */
     --color-accent: #38BDF8;          /* Sky Blue */
     --color-accent-secondary: #F472B6; /* Pink */
     --color-accent-light: #7DD3FC;     /* Lighter Sky Blue */
-    --color-card-bg: rgba(23, 32, 42, 0.45); /* Semi-transparent dark blue */
+    --color-card-bg: rgba(23, 32, 42, 0.45); /* fallback */
     --color-card-border: rgba(55, 65, 81, 0.7);
     --font-sans: 'Inter', sans-serif;
     --font-logo: 'Playfair Display', serif;
 }
 
 body {
-    background-color: var(--color-bg-start); /* Fallback color */
-    /* New photo background with a dark overlay for readability */
-    background-image: linear-gradient(rgba(11, 17, 32, 0.85), rgba(11, 17, 32, 0.85)), url('https://images.unsplash.com/photo-1497032628192-86f99d791b7e?q=80&w=2070&auto=format&fit=crop');
-    background-size: cover;
-    background-position: center center;
+    background-color: var(--color-bg-start);
     color: var(--color-text);
     font-family: var(--font-sans);
     position: relative;
     overflow-x: hidden;
-    background-attachment: fixed;
 }
 
-#backgroundImageContainer {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: 0;
-    overflow: hidden;
+/* Konten utama berada di atas background */
+.content-wrapper {
+    position: relative;
+    z-index: 1;
 }
-
-#backgroundImageContainer img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    filter: blur(4px) brightness(0.4);
-    transform: scale(1.1);
-    animation: kenBurns 30s ease-in-out infinite;
-    opacity: 0;
-    transition: opacity 1.5s ease-in-out;
-}
-
-#backgroundImageContainer img.loaded {
-    opacity: 1;
-}
-
-
-@keyframes kenBurns {
-    0% {
-        transform: scale(1.1) translate(0, 0);
-    }
-    50% {
-        transform: scale(1.2) translate(5%, -5%);
-    }
-    100% {
-        transform: scale(1.1) translate(0, 0);
-    }
-}
-
 
 /* Custom font class for the logo text */
 .font-logo {
     font-family: var(--font-logo);
 }
 
-.text-gradient {
-    background: linear-gradient(90deg, var(--color-accent-light), var(--color-accent-secondary));
+/* Animasi Gradien untuk Teks */
+.animated-gradient-text {
+    background: linear-gradient(90deg, var(--color-accent-light), var(--color-accent-secondary), var(--color-accent), var(--color-accent-light));
+    background-size: 250% 100%;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
+    animation: gradient-flow 8s ease-in-out infinite;
+}
+
+@keyframes gradient-flow {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
 }
 
 .text-accent {
@@ -120,20 +91,19 @@ body {
     }
 }
 
-/* Futuristic card effect */
-.futuristic-card {
-    background: var(--color-card-bg);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid var(--color-card-border);
-    transition: all 0.3s ease;
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.2);
+/* Efek Kaca (Glassmorphism) untuk Kartu */
+.futuristic-card, .feature-card {
+    background: rgba(30, 41, 59, 0.4); /* slate-800 with opacity */
+    border: 1px solid rgba(51, 65, 85, 0.8); /* slate-700 with opacity */
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    transition: transform 0.3s ease, background 0.3s ease, border-color 0.3s ease;
 }
 
-.futuristic-card:hover {
-    border-color: rgba(56, 189, 248, 0.8);
-    box-shadow: 0 8px 40px rgba(0, 0, 0, 0.3);
-    transform: translateY(-4px);
+.futuristic-card:hover, .feature-card:hover {
+    transform: translateY(-8px);
+    border-color: rgba(56, 189, 248, 0.5); /* Use accent color for hover */
+    background: rgba(30, 41, 59, 0.6);
 }
 
 /* Loader animation */
@@ -169,6 +139,8 @@ body {
     from { opacity: 0; transform: translateY(30px); }
     to { opacity: 1; transform: translateY(0); }
 }
+
+/* Initial animation states are now handled by GSAP in JS to prevent conflicts */
 
 /* Selected state for persona buttons */
 .btn-persona.selected {
@@ -308,4 +280,29 @@ body {
 
 @keyframes scaleInModal {
     to { transform: scale(1); }
+}
+
+/* --- Background Video Dinamis --- */
+.video-background-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    z-index: 0;
+}
+.video-background-container video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.video-background-container::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(17, 24, 39, 0.7);
 }
