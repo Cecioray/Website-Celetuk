@@ -115,44 +115,77 @@ const getSpotifyToken = async () => {
 
 const searchSpotifyTrack = async (title, artist, token) => {
     if (!token) return null;
+
+    const fetchArtistImage = async (artistId) => {
+        if (!artistId) return null;
+        try {
+            const artistResponse = await axios.get(`https://api.spotify.com/v1/artists/${artistId}`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            return artistResponse.data.images[0]?.url;
+        } catch (artistError) {
+             console.error("Error fetching Spotify artist:", artistError.response ? artistError.response.data : artistError.message);
+             return null;
+        }
+    };
+
+    const formatTrackData = async (track) => {
+        if (!track) return null;
+        const artist_image_url = await fetchArtistImage(track.artists?.[0]?.id);
+        return {
+            title: track.name,
+            artist: track.artists.map(a => a.name).join(', '),
+            preview_url: track.preview_url,
+            album_art_url: track.album.images[0]?.url,
+            artist_image_url: artist_image_url
+        };
+    };
+
     try {
-        const searchQuery = `track:${title} artist:${artist}`;
-        const searchResponse = await axios.get('https://api.spotify.com/v1/search', {
-            params: { 
-                q: searchQuery, 
-                type: 'track', 
-                limit: 1 
-            },
+        // 1. Try a very specific query first
+        let searchQuery = `track:"${title}" artist:"${artist}"`;
+        let searchResponse = await axios.get('https://api.spotify.com/v1/search', {
+            params: { q: searchQuery, type: 'track', limit: 1 },
             headers: { 'Authorization': `Bearer ${token}` }
         });
 
-        const track = searchResponse.data.tracks.items[0];
-        if (track) {
-            let artist_image_url = null;
-            // Get artist image from the primary artist
-            if (track.artists && track.artists[0] && track.artists[0].id) {
-                try {
-                    const artistResponse = await axios.get(`https://api.spotify.com/v1/artists/${track.artists[0].id}`, {
-                        headers: { 'Authorization': `Bearer ${token}` }
-                    });
-                    artist_image_url = artistResponse.data.images[0]?.url;
-                } catch (artistError) {
-                     console.error("Error fetching Spotify artist:", artistError.response ? artistError.response.data : artistError.message);
-                     // Non-fatal, continue without artist image
-                }
-            }
-            return {
-                preview_url: track.preview_url,
-                album_art_url: track.album.images[0]?.url,
-                artist_image_url: artist_image_url,
-            };
+        let track = searchResponse.data.tracks.items[0];
+
+        // 2. If we found a track and it has a preview, we're done.
+        if (track && track.preview_url) {
+            return await formatTrackData(track);
         }
-        return null;
+
+        // 3. If no track or no preview, try a broader search.
+        console.log(`Specific search for "${title} - ${artist}" failed or has no preview. Trying broader search.`);
+        searchQuery = `${title} ${artist}`; // Broader query
+        searchResponse = await axios.get('https://api.spotify.com/v1/search', {
+            params: { q: searchQuery, type: 'track', limit: 10 }, // Get more results to check
+            headers: { 'Authorization': `Bearer ${token}` }
+        });
+
+        const tracks = searchResponse.data.tracks.items;
+        if (!tracks || tracks.length === 0) {
+            return null; // Nothing found at all
+        }
+        
+        // 4. Find the first track in the broad results that has a preview URL
+        const trackWithPreview = tracks.find(t => t.preview_url);
+
+        if (trackWithPreview) {
+             return await formatTrackData(trackWithPreview);
+        }
+
+        // 5. If still no preview, return the first result from the broad search anyway
+        console.log(`No track with preview found for "${title} - ${artist}". Returning first result without preview.`);
+        return await formatTrackData(tracks[0]);
+
     } catch (error) {
         console.error("Error searching Spotify:", error.response ? error.response.data : error.message);
         return null;
     }
 };
+
 
 // --- AI Helper Function ---
 async function getAiAnalysis(base64ImageData, persona, theme) {

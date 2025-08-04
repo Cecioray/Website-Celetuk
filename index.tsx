@@ -799,7 +799,7 @@ function createSlideHTML(idea: IdeaResult): string {
         </div>
     `;
 
-    // JIKA ADA URL CUPLIKAN, BUAT TOMBOL PLAY/PAUSE
+    // JIKA ADA URL CUPLIKAN, BUAT TOMBOL PLAY/PAUSE YANG BISA DIPUTAR
     if (song.preview_url) {
         musicPlayerHTML = `
             <div class="mt-4 p-3 rounded-lg bg-black bg-opacity-20 flex items-center space-x-3">
@@ -811,13 +811,13 @@ function createSlideHTML(idea: IdeaResult): string {
                 </button>
             </div>
         `;
-    } else { // JIKA TIDAK ADA URL CUPLIKAN, BUAT TOMBOL CARI DENGAN IKON PLAY
+    } else { // JIKA TIDAK ADA URL CUPLIKAN, BUAT TOMBOL ABU-ABU YANG MENGARAH KE SPOTIFY
         const searchQuery = encodeURIComponent(`${song.title} ${song.artist}`);
         const spotifyLink = `https://open.spotify.com/search/${searchQuery}`;
         musicPlayerHTML = `
             <div class="mt-4 p-3 rounded-lg bg-black bg-opacity-20 flex items-center space-x-3">
                 ${playerContent}
-                <a href="${spotifyLink}" target="_blank" title="Lagu tidak tersedia untuk diputar, cari di Spotify" class="play-pause-btn text-white bg-slate-500 rounded-full w-12 h-12 flex items-center justify-center flex-shrink-0 hover:bg-slate-600 transition no-underline">
+                <a href="${spotifyLink}" target="_blank" title="Pratinjau tidak tersedia. Cari di Spotify." class="play-pause-btn text-white bg-slate-600 rounded-full w-12 h-12 flex items-center justify-center flex-shrink-0 hover:bg-slate-700 transition no-underline">
                     ${playIconSVG}
                 </a>
             </div>
@@ -857,7 +857,16 @@ function setupAudioPlayers() {
         const pauseIcon = button.querySelector('.pause-icon');
 
         if (audio && playIcon && pauseIcon) {
-            let playTimeout: number;
+            let playTimeout: number | undefined;
+
+            const stopPlayback = () => {
+                playIcon.classList.remove('hidden');
+                pauseIcon.classList.add('hidden');
+                if (playTimeout) {
+                    clearTimeout(playTimeout);
+                    playTimeout = undefined;
+                }
+            }
 
             button.addEventListener('click', (event) => {
                 event.stopPropagation();
@@ -876,6 +885,7 @@ function setupAudioPlayers() {
                     pauseIcon.classList.remove('hidden');
 
                     // Set timeout untuk menjeda lagu setelah 15 detik
+                    if (playTimeout) clearTimeout(playTimeout);
                     playTimeout = window.setTimeout(() => {
                         if (!audio.paused) {
                             audio.pause();
@@ -883,27 +893,12 @@ function setupAudioPlayers() {
                     }, 15000);
 
                 } else {
-                    audio.pause(); // Ini memicu listener 'pause' di bawah
+                    audio.pause(); // Ini akan memicu event 'pause' yang akan memanggil stopPlayback
                 }
             });
 
-            // Bersihkan saat audio dijeda (baik oleh pengguna atau timeout)
-            audio.addEventListener('pause', () => {
-                playIcon.classList.remove('hidden');
-                pauseIcon.classList.add('hidden');
-                if (playTimeout) {
-                    clearTimeout(playTimeout);
-                }
-            });
-
-            // Bersihkan saat audio selesai secara alami sebelum timeout
-            audio.addEventListener('ended', () => {
-                playIcon.classList.remove('hidden');
-                pauseIcon.classList.add('hidden');
-                if (playTimeout) {
-                    clearTimeout(playTimeout);
-                }
-            });
+            audio.addEventListener('pause', stopPlayback);
+            audio.addEventListener('ended', stopPlayback);
         }
     });
 }
