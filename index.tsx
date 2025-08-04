@@ -4,8 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import './index.css';
-
 export {};
 
 // NOTE: The GoogleGenAI import has been removed from the client-side code.
