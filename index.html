@@ -6,45 +6,23 @@
     <title>Celetuk - Asisten Konten AI</title>
     <meta name="description" content="Generate viral captions, hashtags, and song recommendations for your photos with a powerful AI assistant.">
     
-    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@700&display=swap" rel="stylesheet">
     
+    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="index.css">
-    
+
     <!-- Midtrans Snap.js Script (Client Key akan di-set secara dinamis via JS) -->
     <script type="text/javascript"
       src="https://app.midtrans.com/snap/snap.js"></script> 
-
-    <script type="importmap">
+<script type="importmap">
 {
   "imports": {
-    "@google/genai": "https://esm.sh/@google/genai",
     "vite": "https://esm.sh/vite@^7.0.6"
   }
 }
 </script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                        logo: ['Playfair Display', 'serif'],
-                    },
-                    colors: {
-                        'background': '#111827',
-                        'text-primary': '#E5E7EB',
-                        'text-muted': '#9CA3AF',
-                        'accent': '#38BDF8',
-                        'accent-secondary': '#F472B6',
-                        'accent-light': '#7DD3FC',
-                    }
-                }
-            }
-        }
-    </script>
 </head>
 <body class="font-sans overflow-x-hidden">
     <div class="video-background-container">
@@ -418,6 +396,6 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
-    <script type="module" src="/src/index.tsx"></script>
+    <script type="module" src="/index.tsx"></script>
 </body>
 </html>
