@@ -166,11 +166,7 @@ async function getAiAnalysis(base64ImageData, persona, theme) {
     5.  **TEMA (JIKA ADA)**: Jika pengguna memberikan tema "${theme || 'tidak ada'}", gabungkan secara alami.
 
     FORMAT OUTPUT:
-    Kembalikan HANYA dalam format array JSON yang valid. Setiap elemen dalam array adalah satu objek ide konten. Contoh:
-    [
-      { "mood": "...", "caption": "...", "hashtags": ["...", "..."], "song": {"title": "...", "artist": "..."} },
-      { "mood": "...", "caption": "...", "hashtags": ["...", "..."], "song": {"title": "...", "artist": "..."} }
-    ]
+    Kembalikan HANYA dalam format array JSON yang valid. Setiap elemen dalam array adalah satu objek ide konten.
     `;
 
     const responseSchema = {

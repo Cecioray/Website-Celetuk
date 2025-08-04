@@ -117,8 +117,8 @@ const mobileUserEmail = document.getElementById('mobileUserEmail') as HTMLParagr
 const mobileLogoutButton = document.getElementById('mobileLogoutButton') as HTMLButtonElement;
 
 // --- Audio Player Icons ---
-const playIconSVG = `<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M4.018 15.39a.5.5 0 00.724.448l9.582-5.476a.5.5 0 000-.896L4.742 4.166a.5.5 0 00-.724.448v10.776z"></path></svg>`;
-const pauseIconSVG = `<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 4.5a.5.5 0 00-.5.5v10a.5.5 0 00.5.5h2a.5.5 0 00.5-.5v-10a.5.5 0 00-.5-.5h-2zm7 0a.5.5 0 00-.5.5v10a.5.5 0 00.5.5h2a.5.5 0 00.5-.5v-10a.5.5 0 00-.5-.5h-2z" clip-rule="evenodd"></path></svg>`;
+const playIconSVG = `<svg class="play-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>`;
+const pauseIconSVG = `<svg class="pause-icon hidden" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>`;
 
 
 // --- State Variables ---
@@ -760,55 +760,7 @@ async function handleAnalyzeClick() {
     }
 }
 
-// --- Audio Player Logic ---
-function setupAudioPlayers(container: HTMLElement) {
-    const allPlayButtons = container.querySelectorAll<HTMLButtonElement>('.play-pause-btn');
-
-    allPlayButtons.forEach(button => {
-        const parent = button.parentElement!;
-        const audio = parent.querySelector<HTMLAudioElement>('.audio-preview');
-        const playIcon = button.querySelector('.play-icon');
-        const pauseIcon = button.querySelector('.pause-icon');
-        
-        if (!audio || !playIcon || !pauseIcon) return;
-
-        button.addEventListener('click', () => {
-            const isPlaying = !audio.paused;
-
-            // Stop all other audios and reset their buttons
-            document.querySelectorAll<HTMLAudioElement>('.audio-preview').forEach(otherAudio => {
-                if (otherAudio !== audio) {
-                    otherAudio.pause();
-                }
-            });
-            document.querySelectorAll<HTMLButtonElement>('.play-pause-btn').forEach(otherButton => {
-                if (otherButton !== button) {
-                    otherButton.querySelector('.play-icon')?.classList.remove('hidden');
-                    otherButton.querySelector('.pause-icon')?.classList.add('hidden');
-                }
-            });
-
-            // Toggle current audio
-            if (isPlaying) {
-                audio.pause();
-                playIcon.classList.remove('hidden');
-                pauseIcon.classList.add('hidden');
-            } else {
-                audio.play().catch(e => console.error("Error playing audio:", e));
-                playIcon.classList.add('hidden');
-                pauseIcon.classList.remove('hidden');
-            }
-        });
-
-        audio.addEventListener('ended', () => {
-            playIcon.classList.remove('hidden');
-            pauseIcon.classList.add('hidden');
-        });
-    });
-}
-
-
-// --- UI Rendering ---
+// --- UI Rendering & Audio ---
 
 function copyToClipboard(textToCopy: string, buttonElement: HTMLButtonElement) {
     navigator.clipboard.writeText(textToCopy).then(() => {
@@ -823,45 +775,53 @@ function copyToClipboard(textToCopy: string, buttonElement: HTMLButtonElement) {
 }
 window.copyToClipboard = copyToClipboard;
 
+
+/**
+ * Membuat string HTML untuk satu kartu/slide.
+ */
 function createSlideHTML(idea: IdeaResult): string {
     const { mood, caption, hashtags, song } = idea;
     const combinedHashtags = hashtags.map(h => `#${h}`).join(' ');
+
+    let musicPlayerHTML = '';
     const albumArt = song.album_art_url || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23475569'%3E%3Cpath d='M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z'/%3E%3C/svg%3E";
-    const songTitle = song.title || "Lagu Tidak Ditemukan";
-    const songArtist = song.artist || "AI sedang mencari...";
-    const searchQuery = encodeURIComponent(`${songTitle} ${songArtist}`);
-    const spotifyLink = `https://open.spotify.com/search/${searchQuery}`;
-
-    // Create artist image HTML
-    let artistImageHTML = '';
-    if (song.artist_image_url) {
-        artistImageHTML = `<img src="${song.artist_image_url}" alt="${songArtist}" class="w-5 h-5 rounded-full object-cover mr-2" crossOrigin="anonymous">`;
-    }
-
-    let musicPlayerHTML = `
-        <div class="mt-4 p-3 rounded-lg bg-slate-900/50 flex items-center space-x-3 text-left">
-            <img src="${albumArt}" alt="Album Art" class="flex-shrink-0 w-14 h-14 rounded-md object-cover" crossOrigin="anonymous">
-            <div class="flex-grow overflow-hidden">
-                <p class="font-bold text-white truncate">${songTitle}</p>
-                <div class="flex items-center mt-1 text-sm text-slate-400">
-                    ${artistImageHTML}
-                    <p class="truncate">${songArtist}</p>
-                </div>
-            </div>
-    `;
+    const artistImage = song.artist_image_url || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239CA3AF'%3E%3Cpath d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E";
 
     if (song.preview_url) {
-        musicPlayerHTML += `
-            <audio class="audio-preview hidden" src="${song.preview_url}" preload="none"></audio>
-            <button class="play-pause-btn">
-                 <span class="play-icon">${playIconSVG}</span>
-                 <span class="pause-icon hidden">${pauseIconSVG}</span>
-            </button>
+        musicPlayerHTML = `
+            <div class="mt-4 p-3 rounded-lg bg-black bg-opacity-20 flex items-center space-x-3">
+                <img src="${albumArt}" alt="Album Art" class="w-14 h-14 rounded-md object-cover flex-shrink-0" crossOrigin="anonymous">
+                <div class="flex-grow text-left overflow-hidden">
+                    <p class="font-bold text-white truncate leading-tight">${song.title}</p>
+                    <div class="flex items-center space-x-2 mt-1">
+                        <img src="${artistImage}" alt="${song.artist}" class="w-5 h-5 rounded-full object-cover">
+                        <p class="text-sm text-slate-400 truncate">${song.artist}</p>
+                    </div>
+                </div>
+                <audio class="audio-preview hidden" src="${song.preview_url}" preload="none"></audio>
+                <button class="play-pause-btn text-white bg-green-500 rounded-full w-12 h-12 flex items-center justify-center flex-shrink-0 hover:bg-green-600 transition">
+                    ${playIconSVG}
+                    ${pauseIconSVG}
+                </button>
+            </div>
         `;
     } else {
-        musicPlayerHTML += `<a href="${spotifyLink}" target="_blank" class="btn-primary-small ml-4 flex-shrink-0 no-underline">Cari</a>`;
+        const searchQuery = encodeURIComponent(`${song.title} ${song.artist}`);
+        const spotifyLink = `https://open.spotify.com/search/${searchQuery}`;
+        musicPlayerHTML = `
+            <div class="mt-4 p-3 rounded-lg bg-black bg-opacity-20 flex items-center space-x-3">
+                <img src="${albumArt}" alt="Album Art" class="w-14 h-14 rounded-md object-cover flex-shrink-0" crossOrigin="anonymous">
+                <div class="flex-grow text-left overflow-hidden">
+                    <p class="font-bold text-white truncate leading-tight">${song.title}</p>
+                     <div class="flex items-center space-x-2 mt-1">
+                        <img src="${artistImage}" alt="${song.artist}" class="w-5 h-5 rounded-full object-cover">
+                        <p class="text-sm text-slate-400 truncate">${song.artist}</p>
+                    </div>
+                </div>
+                <a href="${spotifyLink}" target="_blank" class="btn-primary-small ml-4 flex-shrink-0 no-underline">Cari</a>
+            </div>
+        `;
     }
-    musicPlayerHTML += `</div>`;
     
     const combinedTextToCopy = `"${caption}"\n\n${combinedHashtags}`;
 
@@ -880,6 +840,56 @@ function createSlideHTML(idea: IdeaResult): string {
     `;
 }
 
+/**
+ * Menambahkan event listener ke semua tombol play/pause yang baru dibuat.
+ */
+function setupAudioPlayers() {
+    const allPlayButtons = document.querySelectorAll('.play-pause-btn');
+    
+    allPlayButtons.forEach(button => {
+        const slide = button.closest('.slide');
+        const audio = slide?.querySelector<HTMLAudioElement>('.audio-preview');
+        const playIcon = button.querySelector('.play-icon');
+        const pauseIcon = button.querySelector('.pause-icon');
+
+        if (audio && playIcon && pauseIcon) {
+            button.addEventListener('click', () => {
+                // Hentikan semua audio lain dan reset ikonnya
+                document.querySelectorAll<HTMLAudioElement>('.audio-preview').forEach(otherAudio => {
+                    if (otherAudio !== audio) {
+                        otherAudio.pause();
+                        const otherButton = otherAudio.closest('.slide')?.querySelector('.play-pause-btn');
+                        if (otherButton) {
+                            otherButton.querySelector('.play-icon')?.classList.remove('hidden');
+                            otherButton.querySelector('.pause-icon')?.classList.add('hidden');
+                        }
+                    }
+                });
+
+                // Putar atau jeda audio yang ini
+                if (audio.paused) {
+                    audio.play().catch(e => console.error("Error playing audio:", e));
+                    playIcon.classList.add('hidden');
+                    pauseIcon.classList.remove('hidden');
+                } else {
+                    audio.pause();
+                    playIcon.classList.remove('hidden');
+                    pauseIcon.classList.add('hidden');
+                }
+            });
+
+            // Reset ikon saat lagu selesai
+            audio.addEventListener('ended', () => {
+                playIcon.classList.remove('hidden');
+                pauseIcon.classList.add('hidden');
+            });
+        }
+    });
+}
+
+/**
+ * Mengatur fungsionalitas tombol next/prev pada slider.
+ */
 function setupSlider(slideCount: number, sliderWrapper: HTMLElement, prevButton: HTMLButtonElement, nextButton: HTMLButtonElement) {
     let currentIndex = 0;
 
@@ -887,12 +897,20 @@ function setupSlider(slideCount: number, sliderWrapper: HTMLElement, prevButton:
         sliderWrapper.style.transform = `translateX(-${currentIndex * 100}%)`;
     }
 
+    function stopAllAudio() {
+        sliderWrapper.querySelectorAll<HTMLAudioElement>('.audio-preview').forEach(audio => {
+            audio.pause();
+        });
+    }
+
     prevButton.onclick = () => {
+        stopAllAudio();
         currentIndex = (currentIndex > 0) ? currentIndex - 1 : slideCount - 1;
         updateSlider();
     };
 
     nextButton.onclick = () => {
+        stopAllAudio();
         currentIndex = (currentIndex < slideCount - 1) ? currentIndex + 1 : 0;
         updateSlider();
     };
@@ -901,20 +919,30 @@ function setupSlider(slideCount: number, sliderWrapper: HTMLElement, prevButton:
     updateSlider();
 }
 
+/**
+ * Fungsi utama untuk menampilkan semua hasil dari AI ke dalam slider.
+ */
 function displayResults(results: IdeaResult[]) {
     if (!results || results.length === 0) {
-        showError("AI tidak memberikan hasil. Coba lagi.");
+        showError("AI tidak dapat memberikan hasil untuk gambar ini. Coba dengan gambar lain.");
+        resultsContainer.classList.add('hidden');
         return;
     }
     
     const sliderWrapper = resultsContainer.querySelector('.slider-wrapper') as HTMLElement;
     const prevButton = resultsContainer.querySelector('#prev-slide') as HTMLButtonElement;
     const nextButton = resultsContainer.querySelector('#next-slide') as HTMLButtonElement;
+    const resultsTitle = resultsContainer.querySelector('h3') as HTMLHeadingElement;
     
     sliderWrapper.innerHTML = results.map(createSlideHTML).join('');
+    
+    if (resultsTitle) {
+        resultsTitle.textContent = `${results.length} Ide Konten Untukmu`;
+    }
 
+    resultsContainer.classList.remove('hidden');
     setupSlider(results.length, sliderWrapper, prevButton, nextButton);
-    setupAudioPlayers(sliderWrapper);
+    setupAudioPlayers();
 }
 
 // --- History Management ---
@@ -1018,7 +1046,7 @@ function showHistoryDetail(item: HistoryItem) {
 
     if (sliderWrapper && prevButton && nextButton) {
         setupSlider(item.resultData.length, sliderWrapper, prevButton, nextButton);
-        setupAudioPlayers(historyDetailContent);
+        setupAudioPlayers();
     }
     
     historyDetailModal.classList.remove('hidden');

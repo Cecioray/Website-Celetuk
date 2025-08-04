@@ -400,7 +400,5 @@ body {
 }
 .play-pause-btn .play-icon,
 .play-pause-btn .pause-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    margin: auto;
 }
