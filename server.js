@@ -1,4 +1,3 @@
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -117,15 +116,29 @@ const getSpotifyToken = async () => {
 const searchSpotifyTrack = async (query, token) => {
     if (!token) return null;
     try {
-        const response = await axios.get('https://api.spotify.com/v1/search', {
+        const searchResponse = await axios.get('https://api.spotify.com/v1/search', {
             params: { q: query, type: 'track', limit: 1 },
             headers: { 'Authorization': `Bearer ${token}` }
         });
-        const track = response.data.tracks.items[0];
+        const track = searchResponse.data.tracks.items[0];
         if (track) {
+            let artist_image_url = null;
+            // Get artist image from the primary artist
+            if (track.artists && track.artists[0] && track.artists[0].id) {
+                try {
+                    const artistResponse = await axios.get(`https://api.spotify.com/v1/artists/${track.artists[0].id}`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    });
+                    artist_image_url = artistResponse.data.images[0]?.url;
+                } catch (artistError) {
+                     console.error("Error fetching Spotify artist:", artistError.response ? artistError.response.data : artistError.message);
+                     // Non-fatal, continue without artist image
+                }
+            }
             return {
                 preview_url: track.preview_url,
-                album_art_url: track.album.images[0]?.url
+                album_art_url: track.album.images[0]?.url,
+                artist_image_url: artist_image_url,
             };
         }
         return null;
@@ -138,28 +151,44 @@ const searchSpotifyTrack = async (query, token) => {
 // --- AI Helper Function ---
 async function getAiAnalysis(base64ImageData, persona, theme) {
     const imageData = base64ImageData.split(',')[1];
-    const systemInstruction = `You are a Gen Z content strategist, expert in viral trends for Instagram & TikTok. Your tone is witty, smart, and current.
-    TASK: Analyze the provided image and generate a complete content package.
-    - Persona: ${persona === 'creator' ? 'Strategic, SEO-focused, professional yet engaging.' : 'Witty, relatable, authentic slang.'}
-    - Theme: ${theme ? `Naturally integrate the theme "${theme}".` : 'No specific theme.'}
-    RULES:
-    1.  5 CAPTION OPTIONS: 4 Gen Z style (max 10 words, witty, use relevant slang like 'POV:', 'era', 'the vibes'). 1 Wise style (short, poetic, relevant).
-    2.  3-5 HASHTAGS: Specific, aesthetic, relevant (e.g., 'cinematicphotography', 'goldenhourglow', not #love).
-    3.  1 SONG RECOMMENDATION: Provide the song title and artist that perfectly match the image's vibe.
-    4.  OUTPUT FORMAT: Return ONLY a valid JSON object.`;
+    const systemInstruction = `
+    Anda adalah seorang content creator Gen Z yang sangat ahli dalam membuat konten viral dan estetik untuk Instagram & TikTok. Bahasa Anda santai, cerdas, dan terkini.
+
+    TUGAS ANDA:
+    Analisis gambar yang diberikan dan buatkan 3 OPSI KONTEN LENGKAP yang berbeda. Setiap opsi harus terasa seperti satu ide utuh.
+
+    ATURAN KETAT UNTUK SETIAP OPSI:
+    1.  **Mood**: Tuliskan satu kata vibe atau perasaan (contoh: 'Chill parah', 'Lagi mode serius', 'Nostalgia era').
+    2.  **Caption**: Buat satu caption yang super singkat (MAKSIMAL 7 KATA), witty, dan relevan. Gunakan bahasa gaul Gen Z.
+        -   **HINDARI FRASA**: 'POV', 'main character', atau frasa lain yang sudah terlalu umum dan terasa cringe. Cari celetukan yang lebih orisinal.
+    3.  **Hashtags**: Berikan 3 hashtag yang spesifik dan estetik (tanpa tanda #).
+    4.  **Lagu**: Berikan 1 rekomendasi lagu yang sedang tren atau cocok dengan mood. Formatnya: 'Judul Lagu oleh Nama Artis'.
+    5.  **TEMA (JIKA ADA)**: Jika pengguna memberikan tema "${theme || 'tidak ada'}", gabungkan secara alami.
+
+    FORMAT OUTPUT:
+    Kembalikan HANYA dalam format array JSON yang valid. Setiap elemen dalam array adalah satu objek ide konten. Contoh:
+    [
+      { "mood": "...", "caption": "...", "hashtags": ["...", "..."], "song": {"title": "...", "artist": "..."} },
+      { "mood": "...", "caption": "...", "hashtags": ["...", "..."], "song": {"title": "...", "artist": "..."} }
+    ]
+    `;
 
     const responseSchema = {
-        type: Type.OBJECT,
-        properties: {
-            captions: { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { style: { type: Type.STRING }, text: { type: Type.STRING } } } },
-            hashtags: { type: Type.ARRAY, items: { type: Type.STRING } },
-            song: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, artist: { type: Type.STRING } } }
-        },
-        required: ["captions", "hashtags", "song"]
+        type: Type.ARRAY,
+        items: {
+            type: Type.OBJECT,
+            properties: {
+                mood: { type: Type.STRING },
+                caption: { type: Type.STRING },
+                hashtags: { type: Type.ARRAY, items: { type: Type.STRING } },
+                song: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, artist: { type: Type.STRING } } }
+            },
+            required: ["mood", "caption", "hashtags", "song"]
+        }
     };
 
     const imagePart = { inlineData: { mimeType: 'image/jpeg', data: imageData } };
-    const textPart = { text: "Analyze this image and generate content." };
+    const textPart = { text: "Analyze this image and generate content packages based on the system instruction." };
 
     const analysisResponse = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
@@ -178,7 +207,7 @@ const authenticateToken = (req, res, next) => {
     const token = authHeader && authHeader.split(' ')[1];
     if (token == null) return res.sendStatus(401);
 
-    jwt.verify(token, process.env.JWT_SECRET, (err, userPayload) => {
+    jwt.verify(token, process.env.JWT_SECRET_KEY, (err, userPayload) => {
         if (err) return res.sendStatus(403);
         req.user = userPayload; // Contains { id, email }
         next();
@@ -218,7 +247,7 @@ app.post('/api/login', async (req, res) => {
         }
         
         const tokenPayload = { id: user.id, email: user.email };
-        const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '7d' });
+        const token = jwt.sign(tokenPayload, process.env.JWT_SECRET_KEY, { expiresIn: '7d' });
         res.json({ token });
     } catch (error) {
         console.error('Login error:', error);
@@ -257,22 +286,24 @@ app.post('/api/analyze', authenticateToken, async (req, res) => {
         }
         if (!base64ImageData || !persona) return res.status(400).json({ error: 'Image data and persona are required.' });
 
-        let analysisResult = await getAiAnalysis(base64ImageData, persona, theme);
+        const analysisResults = await getAiAnalysis(base64ImageData, persona, theme);
 
-        if (analysisResult && analysisResult.song) {
-            const spotifyApiToken = await getSpotifyToken();
-            const spotifyData = await searchSpotifyTrack(`${analysisResult.song.title} ${analysisResult.song.artist}`, spotifyApiToken);
-            if (spotifyData) {
-                analysisResult.song.preview_url = spotifyData.preview_url;
-                analysisResult.song.album_art_url = spotifyData.album_art_url;
+        const spotifyApiToken = await getSpotifyToken();
+        const enrichedResults = await Promise.all(analysisResults.map(async (idea) => {
+            if (idea.song && idea.song.title && idea.song.artist) {
+                const spotifyData = await searchSpotifyTrack(`${idea.song.title} ${idea.song.artist}`, spotifyApiToken);
+                if (spotifyData) {
+                    idea.song = { ...idea.song, ...spotifyData };
+                }
             }
-        }
+            return idea;
+        }));
         
         if (!user.is_premium) {
             await pool.query('UPDATE users SET generation_credits = generation_credits - 1 WHERE id = $1', [user.id]);
         }
         
-        res.json({ analysis: [analysisResult] }); // Wrap in array to match client expectation
+        res.json({ analysis: enrichedResults });
     } catch (error) {
         console.error("Error in /api/analyze:", error);
         res.status(500).json({ error: error.message || 'Failed to analyze content.' });
@@ -431,6 +462,7 @@ app.post('/api/history', authenticateToken, async (req, res) => {
 // --- Serve Frontend ---
 // This should be after all API routes
 app.use(express.static(path.join(__dirname, 'dist')));
+
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });

@@ -40,7 +40,6 @@ const loaderText = document.getElementById('loaderText') as HTMLParagraphElement
 const resultsContainer = document.getElementById('resultsContainer') as HTMLElement;
 const errorContainer = document.getElementById('errorContainer') as HTMLElement;
 const errorMessage = document.getElementById('errorMessage') as HTMLParagraphElement;
-const creatorResultCard = document.getElementById('creatorResultCard') as HTMLElement;
 const resetButton = document.getElementById('resetButton') as HTMLButtonElement;
 const backFromLoaderButton = document.getElementById('backFromLoaderButton') as HTMLButtonElement;
 const backFromResultsButton = document.getElementById('backFromResultsButton') as HTMLButtonElement;
@@ -118,7 +117,8 @@ const mobileUserEmail = document.getElementById('mobileUserEmail') as HTMLParagr
 const mobileLogoutButton = document.getElementById('mobileLogoutButton') as HTMLButtonElement;
 
 // --- Audio Player ---
-const globalAudioPlayer = document.getElementById('global-audio-player') as HTMLAudioElement;
+let currentPlayingAudio: HTMLAudioElement | null = null;
+let currentPlayingButton: HTMLButtonElement | null = null;
 
 
 // --- State Variables ---
@@ -128,7 +128,6 @@ let currentUser: User | null = null;
 let isLoginMode = true; // For login/register modal
 let midtransClientKey: string | null = null;
 const API_BASE_URL = ''; // Now served from same origin
-let currentPlayingButton: HTMLButtonElement | null = null;
 let analysisAbortController: AbortController | null = null;
 let passwordResetToken: string | null = null;
 
@@ -147,24 +146,20 @@ interface Song {
     artist: string;
     album_art_url?: string;
     preview_url?: string;
+    artist_image_url?: string;
 }
 
-interface Caption {
-    style: 'Gen Z' | 'Bijak';
-    text: string;
-}
-
-interface AiResult {
-    captions: Caption[];
+interface IdeaResult {
+    mood: string;
+    caption: string;
     hashtags: string[];
     song: Song;
 }
 
-
 interface HistoryItem {
     id: string; // timestamp
     thumbnailDataUrl: string;
-    resultData: AiResult[];
+    resultData: IdeaResult[];
     persona: 'creator' | 'casual';
     date: string;
 }
@@ -325,14 +320,12 @@ function resetUI() {
     resultsContainer.classList.add('hidden');
     loaderContainer.classList.add('hidden');
     errorContainer.classList.add('hidden');
-    resultImagePreviewContainer.classList.add('hidden');
     
     fileInput.value = '';
     themeInput.value = '';
     base64ImageData = null;
     userPersona = null;
     imagePreview.src = '#';
-    resultImagePreview.src = '#';
     personaButtons.forEach(btn => btn.classList.remove('selected'));
     
     updatePremiumUI();
@@ -738,7 +731,7 @@ async function handleAnalyzeClick() {
             throw new Error(errorData.error || "Gagal mendapatkan respons dari server.");
         }
 
-        const { analysis, background } = await response.json();
+        const { analysis }: { analysis: IdeaResult[] } = await response.json();
 
         // Refresh user data to show updated credit count immediately
         await checkAuthStatus();
@@ -747,7 +740,7 @@ async function handleAnalyzeClick() {
             throw new Error("Respons AI tidak valid atau kosong. Coba lagi.");
         }
 
-        displayResults(analysis, base64ImageData);
+        displayResults(analysis);
         await addToHistory(base64ImageData, analysis, userPersona);
         loaderContainer.classList.add('hidden');
         resultsContainer.classList.remove('hidden');
@@ -768,60 +761,46 @@ async function handleAnalyzeClick() {
 }
 
 // --- Audio Player Logic ---
+const playIconSVG = `<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M4.018 15.39a.5.5 0 00.724.448l9.582-5.476a.5.5 0 000-.896L4.742 4.166a.5.5 0 00-.724.448v10.776z"></path></svg>`;
+const pauseIconSVG = `<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 4.5a.5.5 0 00-.5.5v10a.5.5 0 00.5.5h2a.5.5 0 00.5-.5v-10a.5.5 0 00-.5-.5h-2zm7 0a.5.5 0 00-.5.5v10a.5.5 0 00.5.5h2a.5.5 0 00.5-.5v-10a.5.5 0 00-.5-.5h-2z" clip-rule="evenodd"></path></svg>`;
 
-const playIconSVG = `<svg class="w-6 h-6 text-background" fill="currentColor" viewBox="0 0 20 20"><path d="M4.018 15.39a.5.5 0 00.724.448l9.582-5.476a.5.5 0 000-.896L4.742 4.166a.5.5 0 00-.724.448v10.776z"></path></svg>`;
-const pauseIconSVG = `<svg class="w-6 h-6 text-background" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 4.5a.5.5 0 00-.5.5v10a.5.5 0 00.5.5h2a.5.5 0 00.5-.5v-10a.5.5 0 00-.5-.5h-2zm7 0a.5.5 0 00-.5.5v10a.5.5 0 00.5.5h2a.5.5 0 00.5-.5v-10a.5.5 0 00-.5-.5h-2z" clip-rule="evenodd"></path></svg>`;
+function setupAudioPlayers(container: HTMLElement) {
+    const audioPlayers = container.querySelectorAll<HTMLAudioElement>('.audio-preview');
+    const playButtons = container.querySelectorAll<HTMLButtonElement>('.play-pause-btn');
 
-function handlePlayPauseClick(button: HTMLButtonElement) {
-    const previewUrl = button.dataset.previewUrl;
-    if (!previewUrl) return;
+    playButtons.forEach((button, index) => {
+        const audio = audioPlayers[index];
+        if (!audio) return;
 
-    if (currentPlayingButton && currentPlayingButton !== button) {
-        resetPlayButton(currentPlayingButton);
-    }
+        button.addEventListener('click', () => {
+            if (currentPlayingAudio && currentPlayingAudio !== audio) {
+                currentPlayingAudio.pause();
+                if(currentPlayingButton) currentPlayingButton.innerHTML = playIconSVG;
+            }
 
-    if (globalAudioPlayer.src === previewUrl && !globalAudioPlayer.paused) {
-        globalAudioPlayer.pause();
-    } else {
-        globalAudioPlayer.src = previewUrl;
-        globalAudioPlayer.play().catch(e => console.error("Error playing audio:", e));
-        currentPlayingButton = button;
-        setPauseButton(button);
-    }
-}
+            if (audio.paused) {
+                audio.play().catch(e => console.error("Error playing audio:", e));
+                button.innerHTML = pauseIconSVG;
+                currentPlayingAudio = audio;
+                currentPlayingButton = button;
+            } else {
+                audio.pause();
+                button.innerHTML = playIconSVG;
+                currentPlayingAudio = null;
+                currentPlayingButton = null;
+            }
+        });
 
-function resetPlayButton(button: HTMLButtonElement | null) {
-    if (button) button.innerHTML = playIconSVG;
-}
-
-function setPauseButton(button: HTMLButtonElement) {
-    button.innerHTML = pauseIconSVG;
-}
-
-function setupAudioPlayers() {
-    const playButtons = document.querySelectorAll('.play-pause-btn');
-    playButtons.forEach(button => {
-        button.addEventListener('click', () => handlePlayPauseClick(button as HTMLButtonElement));
-    });
-
-    globalAudioPlayer.addEventListener('ended', () => {
-        resetPlayButton(currentPlayingButton);
-        currentPlayingButton = null;
-    });
-
-    globalAudioPlayer.addEventListener('pause', () => {
-        if(globalAudioPlayer.currentTime > 0 && !globalAudioPlayer.ended) { // Manual pause
-            resetPlayButton(currentPlayingButton);
-            currentPlayingButton = null;
-        }
-    });
-
-     globalAudioPlayer.addEventListener('play', () => {
-        if (currentPlayingButton) {
-            setPauseButton(currentPlayingButton);
-        }
+        audio.onended = () => {
+            button.innerHTML = playIconSVG;
+            if (currentPlayingAudio === audio) {
+                currentPlayingAudio = null;
+                currentPlayingButton = null;
+            }
+        };
     });
 }
+
 
 // --- UI Rendering ---
 
@@ -838,107 +817,103 @@ function copyToClipboard(textToCopy: string, buttonElement: HTMLButtonElement) {
 }
 window.copyToClipboard = copyToClipboard;
 
-function displayResults(results: AiResult[], imageDataUrl: string, currentPersona = userPersona) {
-    creatorResultCard.innerHTML = '';
-
-    // Populate the result image preview
-    if(imageDataUrl) {
-        resultImagePreview.src = imageDataUrl;
-        resultImagePreviewContainer.classList.remove('hidden');
-    }
-    
-    // Build the main results card
-    creatorResultCard.innerHTML = buildResultCardsHTML(results, currentPersona);
-    creatorResultCard.classList.remove('hidden');
-
-    setupAudioPlayers();
-}
-
-
-function buildSongPlayerHTML(song?: Song): string {
-    if (!song) return '';
-
+function createSlideHTML(idea: IdeaResult): string {
+    const { mood, caption, hashtags, song } = idea;
+    const combinedHashtags = hashtags.map(h => `#${h}`).join(' ');
+    const albumArt = song.album_art_url || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23475569'%3E%3Cpath d='M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z'/%3E%3C/svg%3E";
     const songTitle = song.title || "Lagu Tidak Ditemukan";
     const songArtist = song.artist || "AI sedang mencari...";
     const searchQuery = encodeURIComponent(`${songTitle} ${songArtist}`);
     const spotifyLink = `https://open.spotify.com/search/${searchQuery}`;
-    const albumArt = song.album_art_url || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23475569'%3E%3Cpath d='M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z'/%3E%3C/svg%3E";
-    
-    const actionHTML = song.preview_url ?
-        `<button class="play-pause-btn p-3 rounded-full bg-accent hover:bg-accent-light transition-transform hover:scale-110 focus:outline-none flex-shrink-0" data-preview-url="${song.preview_url}" aria-label="Putar cuplikan">
-            ${playIconSVG}
-        </button>` :
-        `<a href="${spotifyLink}" target="_blank" class="btn-primary-small ml-4 flex-shrink-0 no-underline">Cari</a>`;
 
-    return `
-        <div class="flex items-center space-x-4 mt-2 p-3 rounded-xl bg-slate-900/50">
-            <img src="${albumArt}" alt="Album Art for ${songTitle}" class="w-16 h-16 rounded-lg object-cover shadow-md flex-shrink-0" crossOrigin="anonymous">
-            <div class="flex-grow text-left overflow-hidden">
-                <p class="font-bold text-slate-50 truncate">${songTitle}</p>
+    // Create image component with stacked album art and artist photo
+    let imageHTML = `
+        <div class="relative flex-shrink-0 w-14 h-14">
+            <img src="${albumArt}" alt="Album Art" class="w-full h-full rounded-md object-cover" crossOrigin="anonymous">
+    `;
+    if (song.artist_image_url) {
+        imageHTML += `
+            <img src="${song.artist_image_url}" alt="${songArtist}" class="absolute -bottom-1 -right-1 w-7 h-7 rounded-full border-2 border-slate-800 object-cover" crossOrigin="anonymous">
+        `;
+    }
+    imageHTML += `</div>`;
+
+    let musicPlayerHTML = `
+        <div class="mt-4 p-3 rounded-lg bg-slate-900/50 flex items-center space-x-3 text-left">
+            ${imageHTML}
+            <div class="flex-grow overflow-hidden">
+                <p class="font-bold text-white truncate">${songTitle}</p>
                 <p class="text-sm text-slate-400 truncate">${songArtist}</p>
             </div>
-            ${actionHTML}
+    `;
+
+    if (song.preview_url) {
+        musicPlayerHTML += `
+            <audio class="audio-preview hidden" src="${song.preview_url}"></audio>
+            <button class="play-pause-btn">${playIconSVG}</button>
+        `;
+    } else {
+        musicPlayerHTML += `<a href="${spotifyLink}" target="_blank" class="btn-primary-small ml-4 flex-shrink-0 no-underline">Cari</a>`;
+    }
+    musicPlayerHTML += `</div>`;
+    
+    const combinedTextToCopy = `"${caption}"\n\n${combinedHashtags}`;
+
+    return `
+        <div class="slide text-left w-full flex-shrink-0">
+            <div class="flex justify-between items-center">
+                <span class="mood-badge">${mood}</span>
+                 <button onclick='copyToClipboard(${JSON.stringify(combinedTextToCopy)}, this)' class="btn-copy">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                </button>
+            </div>
+            <p class="caption-text">“${caption}”</p>
+            <p class="hashtags">${combinedHashtags}</p>
+            ${musicPlayerHTML}
         </div>
     `;
 }
 
-function buildResultCardsHTML(results: AiResult[], persona: 'creator' | 'casual' | null): string {
-    // The new structure has one result object in the array
-    if (!results || results.length === 0) return '';
-    
-    const item = results[0]; // { captions: [...], hashtags: [...], song: ... }
-    const captions = item.captions || [];
-    const hashtags = item.hashtags || [];
-    const combinedHashtags = hashtags.map(h => `#${h}`).join(' ');
+function setupSlider(slideCount: number, sliderWrapper: HTMLElement, prevButton: HTMLButtonElement, nextButton: HTMLButtonElement) {
+    let currentIndex = 0;
 
-    const captionsHTML = captions.map((caption: {style: string, text: string}) => {
-        const badge = caption.style === 'Bijak' 
-            ? `<span class="absolute top-2 right-2 text-xs font-semibold bg-indigo-500 text-indigo-100 px-2 py-1 rounded-full">${caption.style}</span>` 
-            : '';
-        return `
-            <div class="bg-slate-800/60 p-4 rounded-lg relative transition-all hover:bg-slate-800">
-                <p class="text-slate-200 pr-16">"${caption.text}"</p>
-                ${badge}
-                <button onclick='copyToClipboard(${JSON.stringify(caption.text)}, this)' class="btn-copy absolute bottom-3 right-3">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                </button>
-            </div>
-        `;
-    }).join('');
+    function updateSlider() {
+        sliderWrapper.style.transform = `translateX(-${currentIndex * 100}%)`;
+    }
 
-    return `
-    <div class="space-y-6 futuristic-card p-6 rounded-2xl shadow-lg text-left h-full">
-        <!-- Captions -->
-        <div>
-            <h3 class="text-xl font-bold text-slate-100 flex items-center mb-4"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>5 Opsi Caption</h3>
-            <div class="space-y-3">
-                ${captionsHTML}
-            </div>
-        </div>
-        <hr class="border-slate-700/50">
-        <!-- Hashtags -->
-        <div>
-             <div class="flex justify-between items-start mb-3">
-                <h3 class="text-xl font-bold text-slate-100 flex items-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 20l4-16m2 16l4-16M6 9h14M4 15h14" /></svg>Hashtag</h3>
-                <button onclick='copyToClipboard(${JSON.stringify(combinedHashtags)}, this)' class="btn-copy">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                </button>
-            </div>
-            <p class="text-accent">${combinedHashtags}</p>
-        </div>
-        <hr class="border-slate-700/50">
-        <!-- Song -->
-        <div>
-            <h3 class="text-xl font-bold mb-2 text-slate-100 flex items-center"><svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" /></svg>Rekomendasi Lagu</h3>
-            ${buildSongPlayerHTML(item.song)}
-        </div>
-    </div>`;
+    prevButton.onclick = () => {
+        currentIndex = (currentIndex > 0) ? currentIndex - 1 : slideCount - 1;
+        updateSlider();
+    };
+
+    nextButton.onclick = () => {
+        currentIndex = (currentIndex < slideCount - 1) ? currentIndex + 1 : 0;
+        updateSlider();
+    };
+
+    // Initialize
+    updateSlider();
 }
 
+function displayResults(results: IdeaResult[]) {
+    if (!results || results.length === 0) {
+        showError("AI tidak memberikan hasil. Coba lagi.");
+        return;
+    }
+    
+    const sliderWrapper = resultsContainer.querySelector('.slider-wrapper') as HTMLElement;
+    const prevButton = resultsContainer.querySelector('#prev-slide') as HTMLButtonElement;
+    const nextButton = resultsContainer.querySelector('#next-slide') as HTMLButtonElement;
+    
+    sliderWrapper.innerHTML = results.map(createSlideHTML).join('');
+
+    setupSlider(results.length, sliderWrapper, prevButton, nextButton);
+    setupAudioPlayers(sliderWrapper);
+}
 
 // --- History Management ---
 
-async function addToHistory(imageDataUrl: string, resultData: AiResult[], persona: 'creator' | 'casual') {
+async function addToHistory(imageDataUrl: string, resultData: IdeaResult[], persona: 'creator' | 'casual') {
     if (!currentUser?.is_premium) return;
     
     try {
@@ -997,8 +972,7 @@ async function renderHistoryPage() {
             historyGrid.classList.remove('hidden');
             history.forEach(item => {
                 const firstResult = item.resultData[0];
-                const title = item.persona === 'creator' ? 'Analisis Kreator' : 'Analisis Santai';
-                const caption = firstResult.captions.length > 0 ? firstResult.captions[0].text : 'Hasil Analisis';
+                const caption = firstResult.caption || 'Hasil Analisis';
 
                 const card = document.createElement('div');
                 card.className = 'futuristic-card rounded-2xl overflow-hidden cursor-pointer text-left flex flex-col';
@@ -1006,7 +980,7 @@ async function renderHistoryPage() {
                     <img src="${item.thumbnailDataUrl}" class="w-full h-40 object-cover" alt="Analisis thumbnail">
                     <div class="p-4 flex flex-col flex-grow">
                         <p class="text-xs text-text-muted">${item.date}</p>
-                        <h4 class="font-bold text-text-primary truncate">${title}</h4>
+                        <h4 class="font-bold text-text-primary truncate capitalize">${firstResult.mood || item.persona}</h4>
                         <p class="text-sm text-text-muted flex-grow truncate">"${caption}"</p>
                     </div>
                 `;
@@ -1022,13 +996,31 @@ async function renderHistoryPage() {
 }
 
 function showHistoryDetail(item: HistoryItem) {
-    historyDetailContent.innerHTML = buildResultCardsHTML(item.resultData, item.persona);
+    historyDetailContent.innerHTML = `
+        <div class="slider-container relative w-full mx-auto">
+            <div class="slider-wrapper flex transition-transform duration-500 ease-in-out">
+                ${item.resultData.map(createSlideHTML).join('')}
+            </div>
+            <button class="slider-nav left-0 prev-slide-history">&lt;</button>
+            <button class="slider-nav right-0 next-slide-history">&gt;</button>
+        </div>
+    `;
+
+    const sliderWrapper = historyDetailContent.querySelector('.slider-wrapper') as HTMLElement;
+    const prevButton = historyDetailContent.querySelector('.prev-slide-history') as HTMLButtonElement;
+    const nextButton = historyDetailContent.querySelector('.next-slide-history') as HTMLButtonElement;
+
+    if (sliderWrapper && prevButton && nextButton) {
+        setupSlider(item.resultData.length, sliderWrapper, prevButton, nextButton);
+        setupAudioPlayers(historyDetailContent);
+    }
+    
     historyDetailModal.classList.remove('hidden');
-    setupAudioPlayers();
 }
 
 function closeHistoryDetailModal() {
     historyDetailModal.classList.add('hidden');
+    historyDetailContent.innerHTML = ''; // Clean up to stop audio
 }
 
 function createThumbnail(dataUrl: string, maxWidth: number): Promise<string> {

@@ -179,18 +179,15 @@
                                     <p id="errorMessage"></p>
                                 </div>
                                  <!-- Results -->
-                                <div id="resultsContainer" class="hidden space-y-6 pt-4">
-                                    <!-- New 2-column layout for results -->
-                                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-                                        <!-- Left side: Image Preview -->
-                                        <div id="resultImagePreviewContainer" class="space-y-3 hidden lg:block">
-                                            <h3 class="text-xl font-bold text-slate-100 text-left">Foto Anda</h3>
-                                            <img id="resultImagePreview" src="#" alt="Your analyzed image" class="rounded-lg shadow-lg border-2 border-slate-700/50 w-full">
+                                <div id="resultsContainer" class="hidden space-y-6 pt-4 w-full">
+                                    <h3 class="text-2xl font-bold text-slate-100 text-center">3 Ide Konten Untukmu</h3>
+                                    <!-- Slider for results -->
+                                    <div class="slider-container relative w-full max-w-2xl mx-auto">
+                                        <div class="slider-wrapper flex transition-transform duration-500 ease-in-out">
+                                            <!-- Slides will be injected here by JS -->
                                         </div>
-                                        <!-- Right side: AI Results -->
-                                        <div id="creatorResultCard">
-                                            <!-- Result card will be injected here -->
-                                        </div>
+                                        <button id="prev-slide" class="slider-nav left-0">&lt;</button>
+                                        <button id="next-slide" class="slider-nav right-0">&gt;</button>
                                     </div>
                                     
                                     <!-- Action Buttons -->
@@ -266,7 +263,7 @@
                 <h1 class="text-4xl md:text-5xl font-bold font-logo leading-tight mb-4 text-text-primary">Riwayat <span class="animated-gradient-text">Analisis Anda</span></h1>
                 <p id="historyEmptyState" class="text-lg text-text-muted max-w-2xl mx-auto mb-12">Anda belum memiliki riwayat. Mulai analisis foto pertama Anda!</p>
                 <div id="historyGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    <!-- History cards will be injected here -->
+                    <!-- History cards will be be injected here -->
                 </div>
             </div>
             
@@ -391,7 +388,7 @@
              <button id="closeHistoryDetailModalButton" class="absolute top-4 right-4 text-text-muted hover:text-text-primary transition-colors z-10">
                  <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
-            <div id="historyDetailContent" class="max-h-[80vh] overflow-y-auto">
+            <div id="historyDetailContent" class="max-h-[80vh] overflow-y-auto pr-4 -mr-4">
                 <!-- Detailed history content will be injected here -->
             </div>
         </div>
