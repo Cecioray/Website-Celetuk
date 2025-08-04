@@ -67,6 +67,9 @@ const userDropdown = document.getElementById('userDropdown') as HTMLElement;
 const logoutButton = document.getElementById('logoutButton') as HTMLButtonElement;
 const loginModal = document.getElementById('loginModal') as HTMLElement;
 const closeLoginModalButton = document.getElementById('closeLoginModalButton') as HTMLButtonElement;
+
+// Login Modal Views
+const authView = document.getElementById('authView') as HTMLElement;
 const loginForm = document.getElementById('loginForm') as HTMLFormElement;
 const loginEmailInput = document.getElementById('loginEmail') as HTMLInputElement;
 const loginPasswordInput = document.getElementById('loginPassword') as HTMLInputElement;
@@ -75,6 +78,26 @@ const loginSubmitButton = document.getElementById('loginSubmitButton') as HTMLBu
 const loginSwitchPrompt = document.getElementById('loginSwitchPrompt') as HTMLSpanElement;
 const loginSwitchLink = document.getElementById('loginSwitchLink') as HTMLAnchorElement;
 const loginModalError = document.getElementById('loginModalError') as HTMLParagraphElement;
+
+// Forgot Password View Selectors
+const forgotPasswordLink = document.getElementById('forgotPasswordLink') as HTMLAnchorElement;
+const forgotPasswordView = document.getElementById('forgotPasswordView') as HTMLElement;
+const forgotPasswordForm = document.getElementById('forgotPasswordForm') as HTMLFormElement;
+const forgotPasswordEmail = document.getElementById('forgotPasswordEmail') as HTMLInputElement;
+const forgotPasswordSubmitButton = document.getElementById('forgotPasswordSubmitButton') as HTMLButtonElement;
+const forgotPasswordModalError = document.getElementById('forgotPasswordModalError') as HTMLParagraphElement;
+const forgotPasswordModalSuccess = document.getElementById('forgotPasswordModalSuccess') as HTMLParagraphElement;
+const backToLoginLink = document.getElementById('backToLoginLink') as HTMLAnchorElement;
+
+// Reset Password Modal Selectors
+const resetPasswordModal = document.getElementById('resetPasswordModal') as HTMLElement;
+const closeResetPasswordModalButton = document.getElementById('closeResetPasswordModalButton') as HTMLButtonElement;
+const resetPasswordForm = document.getElementById('resetPasswordForm') as HTMLFormElement;
+const resetPasswordInput = document.getElementById('resetPasswordInput') as HTMLInputElement;
+const confirmPasswordInput = document.getElementById('confirmPasswordInput') as HTMLInputElement;
+const resetPasswordSubmitButton = document.getElementById('resetPasswordSubmitButton') as HTMLButtonElement;
+const resetPasswordModalError = document.getElementById('resetPasswordModalError') as HTMLParagraphElement;
+
 
 const historyNavButton = document.getElementById('historyNavButton') as HTMLAnchorElement;
 const historyGrid = document.getElementById('historyGrid') as HTMLElement;
@@ -107,6 +130,7 @@ let midtransClientKey: string | null = null;
 const API_BASE_URL = ''; // Now served from same origin
 let currentPlayingButton: HTMLButtonElement | null = null;
 let analysisAbortController: AbortController | null = null;
+let passwordResetToken: string | null = null;
 
 
 // --- Type Definitions ---
@@ -383,13 +407,17 @@ function updateUserUI() {
 // --- Modal Handling (Login, Subscription, History, Mobile Menu) ---
 
 function openLoginModal() {
+    switchToAuthView();
     loginModal.classList.remove('hidden');
 }
 
 function closeLoginModal() {
     loginModal.classList.add('hidden');
     loginForm.reset();
+    forgotPasswordForm.reset();
     loginModalError.classList.add('hidden');
+    forgotPasswordModalError.classList.add('hidden');
+    forgotPasswordModalSuccess.classList.add('hidden');
 }
 
 function switchAuthMode() {
@@ -399,6 +427,16 @@ function switchAuthMode() {
     loginSwitchPrompt.textContent = isLoginMode ? 'Belum punya akun?' : 'Sudah punya akun?';
     loginSwitchLink.textContent = isLoginMode ? 'Daftar di sini' : 'Login di sini';
     loginModalError.classList.add('hidden');
+}
+
+function switchToAuthView() {
+    authView.classList.remove('hidden');
+    forgotPasswordView.classList.add('hidden');
+}
+
+function switchToForgotPasswordView() {
+    authView.classList.add('hidden');
+    forgotPasswordView.classList.remove('hidden');
 }
 
 function openSubscriptionModal() {
@@ -427,6 +465,87 @@ function openMobileMenu() {
 function closeMobileMenu() {
     mobileMenu.classList.add('hidden');
     mobileMenu.classList.remove('fade-in');
+}
+
+function openResetPasswordModal() {
+    resetPasswordModal.classList.remove('hidden');
+}
+
+function closeResetPasswordModal() {
+    resetPasswordModal.classList.add('hidden');
+    resetPasswordForm.reset();
+    resetPasswordModalError.classList.add('hidden');
+}
+
+
+// --- Password Reset ---
+async function handleForgotPassword(event: Event) {
+    event.preventDefault();
+    forgotPasswordModalError.classList.add('hidden');
+    forgotPasswordModalSuccess.classList.add('hidden');
+    forgotPasswordSubmitButton.disabled = true;
+    forgotPasswordSubmitButton.innerHTML = `<div class="loader-small" style="border-top-color: var(--color-bg-start);"></div>`;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/forgot-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: forgotPasswordEmail.value }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Gagal mengirim email.');
+
+        forgotPasswordModalSuccess.textContent = 'Link reset telah dikirim. Silakan periksa email Anda.';
+        forgotPasswordModalSuccess.classList.remove('hidden');
+        forgotPasswordForm.reset();
+    } catch (error: any) {
+        forgotPasswordModalError.textContent = error.message;
+        forgotPasswordModalError.classList.remove('hidden');
+    } finally {
+        forgotPasswordSubmitButton.disabled = false;
+        forgotPasswordSubmitButton.textContent = 'Kirim Link';
+    }
+}
+
+async function handleResetPassword(event: Event) {
+    event.preventDefault();
+    if (resetPasswordInput.value !== confirmPasswordInput.value) {
+        resetPasswordModalError.textContent = 'Password tidak cocok.';
+        resetPasswordModalError.classList.remove('hidden');
+        return;
+    }
+    if (!passwordResetToken) {
+        resetPasswordModalError.textContent = 'Token reset tidak ditemukan.';
+        resetPasswordModalError.classList.remove('hidden');
+        return;
+    }
+
+    resetPasswordModalError.classList.add('hidden');
+    resetPasswordSubmitButton.disabled = true;
+    resetPasswordSubmitButton.innerHTML = `<div class="loader-small" style="border-top-color: var(--color-bg-start);"></div>`;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/reset-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                token: passwordResetToken,
+                password: resetPasswordInput.value,
+            }),
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || 'Gagal mereset password.');
+        
+        alert('Password berhasil direset! Silakan login dengan password baru Anda.');
+        closeResetPasswordModal();
+        openLoginModal();
+    } catch (error: any) {
+        resetPasswordModalError.textContent = error.message;
+        resetPasswordModalError.classList.remove('hidden');
+    } finally {
+        resetPasswordSubmitButton.disabled = false;
+        resetPasswordSubmitButton.textContent = 'Reset Password';
+    }
 }
 
 
@@ -954,6 +1073,13 @@ function handleNavigation(event: Event, isMobile: boolean = false) {
         showPage(pageId);
     } else if (anchor && anchor.startsWith('#')) {
         // It's an anchor scroll link.
+        // Special case for reset password links
+        const urlParams = new URLSearchParams(window.location.search);
+        if (urlParams.has('token')) {
+             window.location.href = window.location.pathname + anchor;
+             return;
+        }
+
         const targetElement = document.querySelector(anchor);
 
         // Ensure the main scroll container is visible before trying to scroll.
@@ -1043,6 +1169,15 @@ async function init() {
         });
     }
 
+    // Check for reset password token in URL
+    const urlParams = new URLSearchParams(window.location.search);
+    if (window.location.pathname.includes('reset-password') && urlParams.has('token')) {
+        passwordResetToken = urlParams.get('token');
+        history.replaceState(null, '', window.location.pathname.split('reset-password')[0]); // Clean URL
+        openResetPasswordModal();
+    }
+
+
     // Fetch config and check auth status on load
     await fetchConfig();
     await checkAuthStatus();
@@ -1083,6 +1218,19 @@ async function init() {
     });
     userProfileButton.addEventListener('click', () => userDropdown.classList.toggle('hidden'));
     logoutButton.addEventListener('click', handleLogout);
+
+    // Password Reset Listeners
+    forgotPasswordLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        switchToForgotPasswordView();
+    });
+    backToLoginLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        switchToAuthView();
+    });
+    forgotPasswordForm.addEventListener('submit', handleForgotPassword);
+    resetPasswordForm.addEventListener('submit', handleResetPassword);
+    closeResetPasswordModalButton.addEventListener('click', closeResetPasswordModal);
 
     // Subscription modal listeners
     closeModalButton.addEventListener('click', closeSubscriptionModal);

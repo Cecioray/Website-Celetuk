@@ -13,6 +13,8 @@ const path = require('path');
 const { GoogleGenAI, Type } = require('@google/genai');
 const { Pool } = require('pg');
 const axios = require('axios');
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 // --- Configuration ---
@@ -45,6 +47,12 @@ const createTables = async () => {
                 generation_credits INTEGER DEFAULT 5
             );
         `);
+        // Add columns for password reset if they don't exist
+        await client.query(`
+            ALTER TABLE users
+            ADD COLUMN IF NOT EXISTS reset_password_token TEXT,
+            ADD COLUMN IF NOT EXISTS reset_password_expires BIGINT;
+        `);
         await client.query(`
             CREATE TABLE IF NOT EXISTS history (
                 id SERIAL PRIMARY KEY,
@@ -75,7 +83,7 @@ let ai;
 if (process.env.GEMINI_API_KEY) {
     ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 } else {
-    console.warn('WARNING: API_KEY is not set. AI features will be disabled.');
+    console.warn('WARNING: GEMINI_API_KEY is not set. AI features will be disabled.');
 }
 
 // --- Spotify API Helpers ---
@@ -271,7 +279,84 @@ app.post('/api/analyze', authenticateToken, async (req, res) => {
     }
 });
 
+// --- PASSWORD RESET ENDPOINTS ---
 
+app.post('/api/forgot-password', async (req, res) => {
+    try {
+        const { email } = req.body;
+        const userResult = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+        const user = userResult.rows[0];
+
+        if (!user) {
+            // To prevent email enumeration, always return a success-like message.
+            return res.json({ message: 'If your email is registered, you will receive a reset link.' });
+        }
+
+        const token = crypto.randomBytes(20).toString('hex');
+        const expires = Date.now() + 3600000; // 1 hour expiry
+
+        await pool.query(
+            'UPDATE users SET reset_password_token = $1, reset_password_expires = $2 WHERE email = $3',
+            [token, expires, user.email]
+        );
+
+        const transporter = nodemailer.createTransport({
+            service: 'gmail',
+            auth: {
+                user: process.env.EMAIL_USER,
+                pass: process.env.EMAIL_PASS,
+            },
+        });
+
+        // Use the production URL for the reset link
+        const resetLink = `${req.protocol}://${req.get('host')}/reset-password?token=${token}`;
+
+        await transporter.sendMail({
+            to: user.email,
+            from: `Celetuk <${process.env.EMAIL_USER}>`,
+            subject: 'Reset Password untuk Akun Celetuk Anda',
+            text: `Anda menerima email ini karena Anda (atau orang lain) meminta reset password untuk akun Anda.\n\n` +
+                  `Silakan klik link berikut, atau salin dan tempel di browser Anda untuk melanjutkan:\n\n` +
+                  `${resetLink}\n\n` +
+                  `Link ini akan kedaluwarsa dalam 1 jam.\n\n`+
+                  `Jika Anda tidak meminta ini, silakan abaikan email ini dan password Anda akan tetap sama.\n`
+        });
+
+        res.json({ message: 'Email reset password telah dikirim.' });
+    } catch (error) {
+        console.error('Forgot password error:', error);
+        res.status(500).json({ error: 'Gagal mengirim email reset.' });
+    }
+});
+
+app.post('/api/reset-password', async (req, res) => {
+    try {
+        const { token, password } = req.body;
+        const userResult = await pool.query(
+            'SELECT * FROM users WHERE reset_password_token = $1 AND reset_password_expires > $2',
+            [token, Date.now()]
+        );
+        const user = userResult.rows[0];
+
+        if (!user) {
+            return res.status(400).json({ error: 'Token reset password tidak valid atau sudah kedaluwarsa.' });
+        }
+
+        const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+        await pool.query(
+            'UPDATE users SET password_hash = $1, reset_password_token = NULL, reset_password_expires = NULL WHERE id = $2',
+            [passwordHash, user.id]
+        );
+        
+        res.json({ message: 'Password berhasil direset. Silakan login.' });
+    } catch (error) {
+        console.error('Reset password error:', error);
+        res.status(500).json({ error: 'Gagal mereset password.' });
+    }
+});
+
+
+// --- PAYMENT & HISTORY ENDPOINTS ---
 app.post('/api/create-transaction', authenticateToken, async (req, res) => {
     try {
         const { amount } = req.body;
@@ -345,6 +430,7 @@ app.post('/api/history', authenticateToken, async (req, res) => {
 
 // --- Serve Frontend ---
 // This should be after all API routes
+const __dirname = path.resolve();
 app.use(express.static(path.join(__dirname, 'dist')));
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));

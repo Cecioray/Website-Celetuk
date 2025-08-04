@@ -283,28 +283,78 @@
             <button id="closeLoginModalButton" class="absolute top-4 right-4 text-text-muted hover:text-text-primary transition-colors">
                 <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
-            <h2 id="loginModalTitle" class="text-2xl font-bold text-text-primary mb-2 text-center">Login</h2>
-            <p id="loginModalError" class="hidden bg-red-900/50 border border-red-500 text-red-300 px-4 py-2 rounded-lg text-center text-sm my-4"></p>
-            <form id="loginForm" class="space-y-4">
-                <div>
-                    <label for="loginEmail" class="block text-sm font-medium text-text-muted mb-2">Email</label>
-                    <input type="email" id="loginEmail" required class="w-full bg-slate-900/30 border border-slate-700 rounded-lg p-3 text-text-primary placeholder-text-muted focus:border-accent focus:ring-0 outline-none transition-colors" placeholder="anda@email.com">
-                </div>
-                <div>
-                    <label for="loginPassword" class="block text-sm font-medium text-text-muted mb-2">Password</label>
-                    <input type="password" id="loginPassword" required class="w-full bg-slate-900/30 border border-slate-700 rounded-lg p-3 text-text-primary placeholder-text-muted focus:border-accent focus:ring-0 outline-none" placeholder="••••••••">
-                </div>
-                <div class="pt-2">
-                    <button id="loginSubmitButton" type="submit" class="btn-primary w-full text-lg">Masuk</button>
-                </div>
-                <p class="text-sm text-center text-text-muted pt-2">
-                    <span id="loginSwitchPrompt">Belum punya akun?</span>
-                    <a href="#" id="loginSwitchLink" class="font-semibold text-accent hover:underline">Daftar di sini</a>
-                </p>
-            </form>
+
+            <!-- View: Login/Register -->
+            <div id="authView">
+                <h2 id="loginModalTitle" class="text-2xl font-bold text-text-primary mb-2 text-center">Login</h2>
+                <p id="loginModalError" class="hidden bg-red-900/50 border border-red-500 text-red-300 px-4 py-2 rounded-lg text-center text-sm my-4"></p>
+                <form id="loginForm" class="space-y-4">
+                    <div>
+                        <label for="loginEmail" class="block text-sm font-medium text-text-muted mb-2">Email</label>
+                        <input type="email" id="loginEmail" required class="w-full bg-slate-900/30 border border-slate-700 rounded-lg p-3 text-text-primary placeholder-text-muted focus:border-accent focus:ring-0 outline-none transition-colors" placeholder="anda@email.com">
+                    </div>
+                    <div>
+                        <label for="loginPassword" class="block text-sm font-medium text-text-muted mb-2">Password</label>
+                        <input type="password" id="loginPassword" required class="w-full bg-slate-900/30 border border-slate-700 rounded-lg p-3 text-text-primary placeholder-text-muted focus:border-accent focus:ring-0 outline-none" placeholder="••••••••">
+                    </div>
+                    <div class="pt-2">
+                        <button id="loginSubmitButton" type="submit" class="btn-primary w-full text-lg">Masuk</button>
+                    </div>
+                    <div class="text-sm text-center text-text-muted pt-2 flex justify-center items-center flex-wrap">
+                        <span id="loginSwitchPrompt">Belum punya akun?</span>
+                        <a href="#" id="loginSwitchLink" class="font-semibold text-accent hover:underline ml-1">Daftar di sini</a>
+                        <span class="mx-2 text-slate-600">|</span>
+                        <a href="#" id="forgotPasswordLink" class="font-semibold text-accent hover:underline">Lupa Password?</a>
+                    </div>
+                </form>
+            </div>
+
+            <!-- View: Forgot Password -->
+            <div id="forgotPasswordView" class="hidden">
+                <h2 class="text-2xl font-bold text-text-primary mb-2 text-center">Lupa Password</h2>
+                <p class="text-sm text-center text-text-muted mb-4">Masukkan email Anda untuk menerima link reset.</p>
+                <p id="forgotPasswordModalError" class="hidden bg-red-900/50 border border-red-500 text-red-300 px-4 py-2 rounded-lg text-center text-sm my-4"></p>
+                <p id="forgotPasswordModalSuccess" class="hidden bg-green-900/50 border border-green-500 text-green-300 px-4 py-2 rounded-lg text-center text-sm my-4"></p>
+                <form id="forgotPasswordForm" class="space-y-4">
+                    <div>
+                        <label for="forgotPasswordEmail" class="block text-sm font-medium text-text-muted mb-2">Email</label>
+                        <input type="email" id="forgotPasswordEmail" required class="w-full bg-slate-900/30 border border-slate-700 rounded-lg p-3 text-text-primary placeholder-text-muted focus:border-accent focus:ring-0 outline-none transition-colors" placeholder="anda@email.com">
+                    </div>
+                    <div class="pt-2">
+                        <button id="forgotPasswordSubmitButton" type="submit" class="btn-primary w-full text-lg">Kirim Link</button>
+                    </div>
+                    <p class="text-sm text-center text-text-muted pt-2">
+                        <a href="#" id="backToLoginLink" class="font-semibold text-accent hover:underline">Kembali ke Login</a>
+                    </p>
+                </form>
+            </div>
+
         </div>
     </div>
 
+    <!-- Reset Password Modal -->
+    <div id="resetPasswordModal" class="hidden modal-overlay">
+        <div class="modal-content futuristic-card p-8 rounded-2xl text-left max-w-sm w-full relative">
+            <button id="closeResetPasswordModalButton" class="absolute top-4 right-4 text-text-muted hover:text-text-primary transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+            </button>
+            <h2 class="text-2xl font-bold text-text-primary mb-2 text-center">Buat Password Baru</h2>
+            <p id="resetPasswordModalError" class="hidden bg-red-900/50 border border-red-500 text-red-300 px-4 py-2 rounded-lg text-center text-sm my-4"></p>
+            <form id="resetPasswordForm" class="space-y-4">
+                <div>
+                    <label for="resetPasswordInput" class="block text-sm font-medium text-text-muted mb-2">Password Baru</label>
+                    <input type="password" id="resetPasswordInput" required class="w-full bg-slate-900/30 border border-slate-700 rounded-lg p-3 text-text-primary placeholder-text-muted focus:border-accent focus:ring-0 outline-none" placeholder="••••••••">
+                </div>
+                <div>
+                    <label for="confirmPasswordInput" class="block text-sm font-medium text-text-muted mb-2">Konfirmasi Password</label>
+                    <input type="password" id="confirmPasswordInput" required class="w-full bg-slate-900/30 border border-slate-700 rounded-lg p-3 text-text-primary placeholder-text-muted focus:border-accent focus:ring-0 outline-none" placeholder="••••••••">
+                </div>
+                <div class="pt-2">
+                    <button id="resetPasswordSubmitButton" type="submit" class="btn-primary w-full text-lg">Reset Password</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <!-- Subscription Modal -->
     <div id="subscriptionModal" class="hidden modal-overlay">
