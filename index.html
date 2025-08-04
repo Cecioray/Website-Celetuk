@@ -171,6 +171,7 @@
                                 <div id="loaderContainer" class="hidden flex flex-col items-center justify-center space-y-4 pt-10">
                                     <div class="loader"></div>
                                     <p id="loaderText" class="text-text-muted mt-4 tracking-widest">MENGANALISIS...</p>
+                                    <button id="backFromLoaderButton" class="btn-secondary mt-6">Kembali</button>
                                 </div>
                                 
                                 <!-- Error Message -->
@@ -185,9 +186,14 @@
                                     <div id="creatorResultCard" class="hidden">
                                         <!-- Creator result will be injected here -->
                                     </div>
-                                    <button id="resetButton" class="btn-secondary">
-                                        Coba Foto Lain
-                                    </button>
+                                    <div class="flex flex-col sm:flex-row-reverse justify-center items-center gap-4">
+                                        <button id="resetButton" class="btn-primary w-full sm:w-auto">
+                                            Coba Foto Lain
+                                        </button>
+                                        <button id="backFromResultsButton" class="btn-secondary w-full sm:w-auto">
+                                            Kembali
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>

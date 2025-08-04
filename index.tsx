@@ -43,6 +43,8 @@ const errorMessage = document.getElementById('errorMessage') as HTMLParagraphEle
 const resultsGrid = document.getElementById('resultsGrid') as HTMLElement;
 const creatorResultCard = document.getElementById('creatorResultCard') as HTMLElement;
 const resetButton = document.getElementById('resetButton') as HTMLButtonElement;
+const backFromLoaderButton = document.getElementById('backFromLoaderButton') as HTMLButtonElement;
+const backFromResultsButton = document.getElementById('backFromResultsButton') as HTMLButtonElement;
 
 
 // --- Subscription Modal Selectors ---
@@ -102,6 +104,7 @@ let isLoginMode = true; // For login/register modal
 let midtransClientKey: string | null = null;
 const API_BASE_URL = ''; // Now served from same origin
 let currentPlayingButton: HTMLButtonElement | null = null;
+let analysisAbortController: AbortController | null = null;
 
 
 // --- Type Definitions ---
@@ -310,6 +313,23 @@ function resetUI() {
     
     updatePremiumUI();
 }
+
+/**
+ * Returns the user to the image preview screen from the loader or results.
+ */
+function goBackToPreview() {
+    // If an analysis is running, abort it.
+    if (analysisAbortController) {
+        analysisAbortController.abort();
+    }
+    
+    // Reset UI to the preview state
+    loaderContainer.classList.add('hidden');
+    resultsContainer.classList.add('hidden');
+    errorContainer.classList.add('hidden');
+    imagePreviewContainer.classList.remove('hidden');
+}
+
 
 /**
  * Displays an error message to the user.
@@ -562,6 +582,12 @@ async function handleAnalyzeClick() {
         return;
     }
 
+    // Abort previous request if any and create a new controller for the new request
+    if (analysisAbortController) {
+        analysisAbortController.abort();
+    }
+    analysisAbortController = new AbortController();
+
     imagePreviewContainer.classList.add('hidden');
     loaderContainer.classList.remove('hidden');
     resultsContainer.classList.add('hidden');
@@ -583,7 +609,8 @@ async function handleAnalyzeClick() {
 
         const response = await fetchWithAuth(`${API_BASE_URL}/api/analyze`, {
             method: 'POST',
-            body: JSON.stringify(payload)
+            body: JSON.stringify(payload),
+            signal: analysisAbortController.signal // Pass the signal to the fetch request
         });
 
         if (!response.ok) {
@@ -615,10 +642,18 @@ async function handleAnalyzeClick() {
         resultsContainer.classList.remove('hidden');
 
     } catch (error: any) {
+        if (error.name === 'AbortError') {
+            console.log('Analysis fetch aborted by user.');
+            // goBackToPreview() has already handled the UI, so we just exit.
+            return;
+        }
         console.error("Error during analysis:", error);
         showError(error.message || "Terjadi kesalahan saat menghubungi server AI.");
         loaderContainer.classList.add('hidden');
         imagePreviewContainer.classList.remove('hidden');
+    } finally {
+        // Clear the controller once the operation is complete (success, error, or abort)
+        analysisAbortController = null;
     }
 }
 
@@ -1072,6 +1107,10 @@ async function init() {
         setTimeout(resetUI, 300);
     });
     
+    // Back button listeners
+    backFromLoaderButton.addEventListener('click', goBackToPreview);
+    backFromResultsButton.addEventListener('click', goBackToPreview);
+
     // Auth listeners
     loginNavButton.addEventListener('click', openLoginModal);
     closeLoginModalButton.addEventListener('click', closeLoginModal);
