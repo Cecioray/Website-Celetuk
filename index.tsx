@@ -116,9 +116,9 @@ const mobileUserProfile = document.getElementById('mobileUserProfile') as HTMLEl
 const mobileUserEmail = document.getElementById('mobileUserEmail') as HTMLParagraphElement;
 const mobileLogoutButton = document.getElementById('mobileLogoutButton') as HTMLButtonElement;
 
-// --- Audio Player ---
-let currentPlayingAudio: HTMLAudioElement | null = null;
-let currentPlayingButton: HTMLButtonElement | null = null;
+// --- Audio Player Icons ---
+const playIconSVG = `<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M4.018 15.39a.5.5 0 00.724.448l9.582-5.476a.5.5 0 000-.896L4.742 4.166a.5.5 0 00-.724.448v10.776z"></path></svg>`;
+const pauseIconSVG = `<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 4.5a.5.5 0 00-.5.5v10a.5.5 0 00.5.5h2a.5.5 0 00.5-.5v-10a.5.5 0 00-.5-.5h-2zm7 0a.5.5 0 00-.5.5v10a.5.5 0 00.5.5h2a.5.5 0 00.5-.5v-10a.5.5 0 00-.5-.5h-2z" clip-rule="evenodd"></path></svg>`;
 
 
 // --- State Variables ---
@@ -761,43 +761,49 @@ async function handleAnalyzeClick() {
 }
 
 // --- Audio Player Logic ---
-const playIconSVG = `<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path d="M4.018 15.39a.5.5 0 00.724.448l9.582-5.476a.5.5 0 000-.896L4.742 4.166a.5.5 0 00-.724.448v10.776z"></path></svg>`;
-const pauseIconSVG = `<svg class="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 4.5a.5.5 0 00-.5.5v10a.5.5 0 00.5.5h2a.5.5 0 00.5-.5v-10a.5.5 0 00-.5-.5h-2zm7 0a.5.5 0 00-.5.5v10a.5.5 0 00.5.5h2a.5.5 0 00.5-.5v-10a.5.5 0 00-.5-.5h-2z" clip-rule="evenodd"></path></svg>`;
-
 function setupAudioPlayers(container: HTMLElement) {
-    const audioPlayers = container.querySelectorAll<HTMLAudioElement>('.audio-preview');
-    const playButtons = container.querySelectorAll<HTMLButtonElement>('.play-pause-btn');
+    const allPlayButtons = container.querySelectorAll<HTMLButtonElement>('.play-pause-btn');
 
-    playButtons.forEach((button, index) => {
-        const audio = audioPlayers[index];
-        if (!audio) return;
+    allPlayButtons.forEach(button => {
+        const parent = button.parentElement!;
+        const audio = parent.querySelector<HTMLAudioElement>('.audio-preview');
+        const playIcon = button.querySelector('.play-icon');
+        const pauseIcon = button.querySelector('.pause-icon');
+        
+        if (!audio || !playIcon || !pauseIcon) return;
 
         button.addEventListener('click', () => {
-            if (currentPlayingAudio && currentPlayingAudio !== audio) {
-                currentPlayingAudio.pause();
-                if(currentPlayingButton) currentPlayingButton.innerHTML = playIconSVG;
-            }
+            const isPlaying = !audio.paused;
 
-            if (audio.paused) {
-                audio.play().catch(e => console.error("Error playing audio:", e));
-                button.innerHTML = pauseIconSVG;
-                currentPlayingAudio = audio;
-                currentPlayingButton = button;
-            } else {
+            // Stop all other audios and reset their buttons
+            document.querySelectorAll<HTMLAudioElement>('.audio-preview').forEach(otherAudio => {
+                if (otherAudio !== audio) {
+                    otherAudio.pause();
+                }
+            });
+            document.querySelectorAll<HTMLButtonElement>('.play-pause-btn').forEach(otherButton => {
+                if (otherButton !== button) {
+                    otherButton.querySelector('.play-icon')?.classList.remove('hidden');
+                    otherButton.querySelector('.pause-icon')?.classList.add('hidden');
+                }
+            });
+
+            // Toggle current audio
+            if (isPlaying) {
                 audio.pause();
-                button.innerHTML = playIconSVG;
-                currentPlayingAudio = null;
-                currentPlayingButton = null;
+                playIcon.classList.remove('hidden');
+                pauseIcon.classList.add('hidden');
+            } else {
+                audio.play().catch(e => console.error("Error playing audio:", e));
+                playIcon.classList.add('hidden');
+                pauseIcon.classList.remove('hidden');
             }
         });
 
-        audio.onended = () => {
-            button.innerHTML = playIconSVG;
-            if (currentPlayingAudio === audio) {
-                currentPlayingAudio = null;
-                currentPlayingButton = null;
-            }
-        };
+        audio.addEventListener('ended', () => {
+            playIcon.classList.remove('hidden');
+            pauseIcon.classList.add('hidden');
+        });
     });
 }
 
@@ -826,31 +832,31 @@ function createSlideHTML(idea: IdeaResult): string {
     const searchQuery = encodeURIComponent(`${songTitle} ${songArtist}`);
     const spotifyLink = `https://open.spotify.com/search/${searchQuery}`;
 
-    // Create image component with stacked album art and artist photo
-    let imageHTML = `
-        <div class="relative flex-shrink-0 w-14 h-14">
-            <img src="${albumArt}" alt="Album Art" class="w-full h-full rounded-md object-cover" crossOrigin="anonymous">
-    `;
+    // Create artist image HTML
+    let artistImageHTML = '';
     if (song.artist_image_url) {
-        imageHTML += `
-            <img src="${song.artist_image_url}" alt="${songArtist}" class="absolute -bottom-1 -right-1 w-7 h-7 rounded-full border-2 border-slate-800 object-cover" crossOrigin="anonymous">
-        `;
+        artistImageHTML = `<img src="${song.artist_image_url}" alt="${songArtist}" class="w-5 h-5 rounded-full object-cover mr-2" crossOrigin="anonymous">`;
     }
-    imageHTML += `</div>`;
 
     let musicPlayerHTML = `
         <div class="mt-4 p-3 rounded-lg bg-slate-900/50 flex items-center space-x-3 text-left">
-            ${imageHTML}
+            <img src="${albumArt}" alt="Album Art" class="flex-shrink-0 w-14 h-14 rounded-md object-cover" crossOrigin="anonymous">
             <div class="flex-grow overflow-hidden">
                 <p class="font-bold text-white truncate">${songTitle}</p>
-                <p class="text-sm text-slate-400 truncate">${songArtist}</p>
+                <div class="flex items-center mt-1 text-sm text-slate-400">
+                    ${artistImageHTML}
+                    <p class="truncate">${songArtist}</p>
+                </div>
             </div>
     `;
 
     if (song.preview_url) {
         musicPlayerHTML += `
-            <audio class="audio-preview hidden" src="${song.preview_url}"></audio>
-            <button class="play-pause-btn">${playIconSVG}</button>
+            <audio class="audio-preview hidden" src="${song.preview_url}" preload="none"></audio>
+            <button class="play-pause-btn">
+                 <span class="play-icon">${playIconSVG}</span>
+                 <span class="pause-icon hidden">${pauseIconSVG}</span>
+            </button>
         `;
     } else {
         musicPlayerHTML += `<a href="${spotifyLink}" target="_blank" class="btn-primary-small ml-4 flex-shrink-0 no-underline">Cari</a>`;

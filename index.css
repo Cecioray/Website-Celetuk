@@ -140,6 +140,11 @@ body {
     to { opacity: 1; transform: translateY(0); }
 }
 
+/* Helper class */
+.hidden {
+    display: none;
+}
+
 /* Initial animation states are now handled by GSAP in JS to prevent conflicts */
 
 /* Selected state for persona buttons */
@@ -392,4 +397,10 @@ body {
 }
 .play-pause-btn:hover {
     transform: scale(1.1);
+}
+.play-pause-btn .play-icon,
+.play-pause-btn .pause-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
