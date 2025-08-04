@@ -321,6 +321,7 @@ function goBackToPreview() {
     // If an analysis is running, abort it.
     if (analysisAbortController) {
         analysisAbortController.abort();
+        analysisAbortController = null; // Clear the controller
     }
     
     // Reset UI to the preview state
@@ -599,8 +600,7 @@ async function handleAnalyzeClick() {
     try {
         if (theme && !currentUser.is_premium) {
             showError("Background AI kustom adalah fitur Premium. Silakan upgrade.");
-            loaderContainer.classList.add('hidden');
-            imagePreviewContainer.classList.remove('hidden');
+            goBackToPreview();
             openSubscriptionModal();
             return;
         }
@@ -618,10 +618,7 @@ async function handleAnalyzeClick() {
             if (response.status === 403 && errorData.quotaExceeded) {
                 // Specific handling for quota error: show subscription modal
                 openSubscriptionModal();
-                // Reset UI from loading back to preview
-                loaderContainer.classList.add('hidden');
-                imagePreviewContainer.classList.remove('hidden');
-                // Return early, we've handled this specific case.
+                goBackToPreview();
                 return;
             }
             throw new Error(errorData.error || "Gagal mendapatkan respons dari server.");
@@ -649,8 +646,7 @@ async function handleAnalyzeClick() {
         }
         console.error("Error during analysis:", error);
         showError(error.message || "Terjadi kesalahan saat menghubungi server AI.");
-        loaderContainer.classList.add('hidden');
-        imagePreviewContainer.classList.remove('hidden');
+        goBackToPreview();
     } finally {
         // Clear the controller once the operation is complete (success, error, or abort)
         analysisAbortController = null;

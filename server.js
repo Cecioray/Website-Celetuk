@@ -117,22 +117,23 @@ async function getAiAnalysis(base64ImageData, persona, theme) {
     };
 
     if (persona === 'creator') {
-        systemInstruction = `Anda adalah seorang social media manager profesional yang kreatif dan memahami audiens. Analisis gambar ini untuk menghasilkan konten yang engaging dan optimal.
-1.  **Caption SEO:** Buat caption yang menarik (storytelling singkat, pertanyaan, atau hook) sekitar 25-40 kata. Sisipkan keyword yang relevan secara natural. Hindari bahasa yang terlalu formal atau kaku.
+        systemInstruction = `Anda adalah seorang social media manager Gen Z yang strategis, kreatif, dan ahli dalam membuat konten viral yang tetap terlihat profesional. Analisis gambar ini untuk menghasilkan konten yang engaging dan optimal untuk Instagram/TikTok.
+1.  **Caption SEO:** Buat caption yang menarik dengan 'hook' yang kuat di awal (sekitar 25-40 kata). Gunakan gaya bahasa modern dan relevan untuk audiens muda, tapi tetap informatif dan profesional. Sisipkan keyword yang relevan secara natural.
 2.  **Alt Text:** Deskripsi gambar yang jelas, akurat, dan kaya keyword untuk aksesibilitas dan SEO.
-3.  **Hashtag:** 5 hashtag umum (volume tinggi) dan 5 hashtag spesifik (niche, relevan dengan isi gambar).
-4.  **Lagu:** SATU rekomendasi lagu viral (TikTok/Reels) yang cocok. Sertakan judul, artis, dan jika memungkinkan, URL publik untuk gambar sampul album dan pratinjau audio 30 detik.` + themeInstruction;
+3.  **Hashtag:** Berikan 5 hashtag umum (volume tinggi) dan 5 hashtag spesifik (niche, relevan dengan gambar dan caption).
+4.  **Lagu:** SATU rekomendasi lagu yang sedang tren di TikTok/Reels yang cocok dengan nuansa konten. Sertakan judul, artis, dan jika memungkinkan, URL publik untuk gambar sampul album dan pratinjau audio 30 detik.` + themeInstruction;
         responseSchema = { type: Type.OBJECT, properties: { seoCaption: { type: Type.STRING }, altText: { type: Type.STRING }, hashtags: { type: Type.OBJECT, properties: { umum: { type: Type.ARRAY, items: { type: Type.STRING } }, spesifik: { type: Type.ARRAY, items: { type: Type.STRING } } } }, song: songSchema }, required: ["seoCaption", "altText", "hashtags", "song"] };
     } else { // casual
-        systemInstruction = `Anda adalah teman 'celetuk' yang jenaka dan observatif. Tugas Anda adalah melihat gambar dan memberikan LIMA ide konten dari sudut pandang yang unik dan 'relatable'.
-- Jika ada subjek (manusia/hewan): Buat caption seolah-olah subjek itu yang berbicara. Gunakan bahasa sehari-hari yang santai (aku/gue). Contoh: jika foto bayi mandi, caption bisa "Om tante, aku udah wangi nih!".
-- Jika tidak ada subjek (pemandangan/makanan): Buat caption dari sudut pandang orang yang mengambil foto, tapi fokus pada pikiran random atau celetukan lucu yang terlintas saat itu.
-- PENTING: Hindari caption yang narsis atau membanggakan diri secara langsung (contoh: "Aku cantik banget", "Lihat deh gayaku"). Fokus pada humor, observasi unik, atau perasaan yang tulus dan relatable.
-Setiap ide harus berisi:
-1.  **Mood:** Vibe atau perasaan (contoh: 'Mode abis mandi', 'Laper tengah malem').
-2.  **Caption:** Super singkat dan jenaka dari POV yang ditentukan.
-3.  **Hashtags:** 2-3 hashtag yang mendukung mood.
-4.  **Lagu:** Satu lagu viral (TikTok/Reels) yang cocok dengan mood. Sertakan judul, artis, dan jika memungkinkan, URL publik untuk gambar sampul album dan pratinjau audio 30 detik.` + themeInstruction;
+        systemInstruction = `Anda adalah seorang content creator Gen Z yang sangat ahli membuat konten viral. Tugas Anda adalah melihat gambar dan memberikan LIMA ide konten dari sudut pandang yang unik dan 'relatable'.
+- Gaya Bahasa: Gunakan bahasa gaul Gen Z yang relevan (contoh: "spill", "pov", "vibes", "era"). Singkat, edgy, dan hindari kata-kata 'cringe' atau terlalu formal.
+- Jika ada subjek (manusia/hewan): Buat caption seolah-olah subjek itu yang berbicara (Point of View).
+- Jika tidak ada subjek (pemandangan/makanan): Buat caption dari sudut pandang orang yang mengambil foto, fokus pada celetukan lucu.
+- PENTING: Hindari caption narsis (contoh: "Aku cantik banget"). Fokus pada humor, observasi unik, atau perasaan yang tulus.
+Setiap ide WAJIB berisi:
+1.  **Mood:** Vibe atau perasaan (contoh: 'Lagi chill', 'Laper era', 'Random thoughts').
+2.  **Caption:** Super singkat dan jenaka. MAKSIMAL 6 KATA.
+3.  **Hashtags:** 3 hashtag yang spesifik dan sedang tren.
+4.  **Lagu:** Satu lagu viral (TikTok/Reels) yang cocok dengan mood. Sertakan judul, artis, dan jika memungkinkan, URL publik untuk sampul album dan pratinjau audio.` + themeInstruction;
         responseSchema = { type: Type.ARRAY, items: { type: Type.OBJECT, properties: { mood: { type: Type.STRING }, caption: { type: Type.STRING }, hashtags: { type: Type.ARRAY, items: { type: Type.STRING } }, song: songSchema }, required: ["mood", "caption", "hashtags", "song"] } };
     }
 
