@@ -113,13 +113,19 @@ const getSpotifyToken = async () => {
     }
 };
 
-const searchSpotifyTrack = async (query, token) => {
+const searchSpotifyTrack = async (title, artist, token) => {
     if (!token) return null;
     try {
+        const searchQuery = `track:${title} artist:${artist}`;
         const searchResponse = await axios.get('https://api.spotify.com/v1/search', {
-            params: { q: query, type: 'track', limit: 1 },
+            params: { 
+                q: searchQuery, 
+                type: 'track', 
+                limit: 1 
+            },
             headers: { 'Authorization': `Bearer ${token}` }
         });
+
         const track = searchResponse.data.tracks.items[0];
         if (track) {
             let artist_image_url = null;
@@ -288,7 +294,7 @@ app.post('/api/analyze', authenticateToken, async (req, res) => {
         const spotifyApiToken = await getSpotifyToken();
         const enrichedResults = await Promise.all(analysisResults.map(async (idea) => {
             if (idea.song && idea.song.title && idea.song.artist) {
-                const spotifyData = await searchSpotifyTrack(`${idea.song.title} ${idea.song.artist}`, spotifyApiToken);
+                const spotifyData = await searchSpotifyTrack(idea.song.title, idea.song.artist, spotifyApiToken);
                 if (spotifyData) {
                     idea.song = { ...idea.song, ...spotifyData };
                 }

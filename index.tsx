@@ -787,18 +787,23 @@ function createSlideHTML(idea: IdeaResult): string {
     const artistImage = song.artist_image_url || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239CA3AF'%3E%3Cpath d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E";
 
     let musicPlayerHTML = '';
+
+    const playerContent = `
+        <img src="${albumArt}" alt="Album Art" class="w-14 h-14 rounded-md object-cover flex-shrink-0" crossOrigin="anonymous">
+        <div class="flex-grow text-left overflow-hidden">
+            <p class="font-bold text-white truncate leading-tight">${song.title}</p>
+            <div class="flex items-center space-x-2 mt-1">
+                <img src="${artistImage}" alt="${song.artist}" class="w-5 h-5 rounded-full object-cover">
+                <p class="text-sm text-slate-400 truncate">${song.artist}</p>
+            </div>
+        </div>
+    `;
+
     // JIKA ADA URL CUPLIKAN, BUAT TOMBOL PLAY/PAUSE
     if (song.preview_url) {
         musicPlayerHTML = `
             <div class="mt-4 p-3 rounded-lg bg-black bg-opacity-20 flex items-center space-x-3">
-                <img src="${albumArt}" alt="Album Art" class="w-14 h-14 rounded-md object-cover flex-shrink-0" crossOrigin="anonymous">
-                <div class="flex-grow text-left overflow-hidden">
-                    <p class="font-bold text-white truncate leading-tight">${song.title}</p>
-                    <div class="flex items-center space-x-2 mt-1">
-                        <img src="${artistImage}" alt="${song.artist}" class="w-5 h-5 rounded-full object-cover">
-                        <p class="text-sm text-slate-400 truncate">${song.artist}</p>
-                    </div>
-                </div>
+                ${playerContent}
                 <audio class="audio-preview hidden" src="${song.preview_url}" preload="none"></audio>
                 <button class="play-pause-btn text-white bg-green-500 rounded-full w-12 h-12 flex items-center justify-center flex-shrink-0 hover:bg-green-600 transition">
                     ${playIconSVG}
@@ -806,20 +811,15 @@ function createSlideHTML(idea: IdeaResult): string {
                 </button>
             </div>
         `;
-    } else { // JIKA TIDAK ADA URL CUPLIKAN, BUAT TOMBOL CARI
+    } else { // JIKA TIDAK ADA URL CUPLIKAN, BUAT TOMBOL CARI DENGAN IKON PLAY
         const searchQuery = encodeURIComponent(`${song.title} ${song.artist}`);
         const spotifyLink = `https://open.spotify.com/search/${searchQuery}`;
         musicPlayerHTML = `
             <div class="mt-4 p-3 rounded-lg bg-black bg-opacity-20 flex items-center space-x-3">
-                <img src="${albumArt}" alt="Album Art" class="w-14 h-14 rounded-md object-cover flex-shrink-0" crossOrigin="anonymous">
-                <div class="flex-grow text-left overflow-hidden">
-                    <p class="font-bold text-white truncate leading-tight">${song.title}</p>
-                     <div class="flex items-center space-x-2 mt-1">
-                        <img src="${artistImage}" alt="${song.artist}" class="w-5 h-5 rounded-full object-cover">
-                        <p class="text-sm text-slate-400 truncate">${song.artist}</p>
-                    </div>
-                </div>
-                <a href="${spotifyLink}" target="_blank" class="btn-primary-small ml-4 flex-shrink-0 no-underline">Cari</a>
+                ${playerContent}
+                <a href="${spotifyLink}" target="_blank" title="Lagu tidak tersedia untuk diputar, cari di Spotify" class="play-pause-btn text-white bg-slate-500 rounded-full w-12 h-12 flex items-center justify-center flex-shrink-0 hover:bg-slate-600 transition no-underline">
+                    ${playIconSVG}
+                </a>
             </div>
         `;
     }
@@ -848,23 +848,24 @@ function setupAudioPlayers() {
     const allPlayButtons = document.querySelectorAll('.play-pause-btn');
     
     allPlayButtons.forEach(button => {
+        // Hanya tambahkan listener ke tombol <button> yang bisa diputar, bukan link <a>
+        if (button.tagName.toLowerCase() !== 'button') return;
+
         const slide = button.closest('.slide');
         const audio = slide?.querySelector<HTMLAudioElement>('.audio-preview');
         const playIcon = button.querySelector('.play-icon');
         const pauseIcon = button.querySelector('.pause-icon');
 
         if (audio && playIcon && pauseIcon) {
+            let playTimeout: number;
+
             button.addEventListener('click', (event) => {
-                event.stopPropagation(); // Mencegah event lain terpicu
+                event.stopPropagation();
+                
                 // Hentikan semua audio lain dan reset ikonnya
                 document.querySelectorAll<HTMLAudioElement>('.audio-preview').forEach(otherAudio => {
                     if (otherAudio !== audio) {
-                        otherAudio.pause();
-                        const otherButton = otherAudio.closest('.slide')?.querySelector('.play-pause-btn');
-                        if (otherButton) {
-                            otherButton.querySelector('.play-icon')?.classList.remove('hidden');
-                            otherButton.querySelector('.pause-icon')?.classList.add('hidden');
-                        }
+                        otherAudio.pause(); // Ini akan memicu listener 'pause' pada audio lain
                     }
                 });
 
@@ -873,23 +874,35 @@ function setupAudioPlayers() {
                     audio.play().catch(e => console.error("Error playing audio:", e));
                     playIcon.classList.add('hidden');
                     pauseIcon.classList.remove('hidden');
+
+                    // Set timeout untuk menjeda lagu setelah 15 detik
+                    playTimeout = window.setTimeout(() => {
+                        if (!audio.paused) {
+                            audio.pause();
+                        }
+                    }, 15000);
+
                 } else {
-                    audio.pause();
-                    playIcon.classList.remove('hidden');
-                    pauseIcon.classList.add('hidden');
+                    audio.pause(); // Ini memicu listener 'pause' di bawah
                 }
             });
 
-            // Reset ikon saat lagu selesai
-            audio.addEventListener('ended', () => {
-                playIcon.classList.remove('hidden');
-                pauseIcon.classList.add('hidden');
-            });
-
-             // Tambahkan listener untuk menghentikan audio saat slide berubah
+            // Bersihkan saat audio dijeda (baik oleh pengguna atau timeout)
             audio.addEventListener('pause', () => {
                 playIcon.classList.remove('hidden');
                 pauseIcon.classList.add('hidden');
+                if (playTimeout) {
+                    clearTimeout(playTimeout);
+                }
+            });
+
+            // Bersihkan saat audio selesai secara alami sebelum timeout
+            audio.addEventListener('ended', () => {
+                playIcon.classList.remove('hidden');
+                pauseIcon.classList.add('hidden');
+                if (playTimeout) {
+                    clearTimeout(playTimeout);
+                }
             });
         }
     });
