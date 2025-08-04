@@ -345,7 +345,6 @@ app.post('/api/history', authenticateToken, async (req, res) => {
 
 // --- Serve Frontend ---
 // This should be after all API routes
-const __dirname = path.resolve();
 app.use(express.static(path.join(__dirname, 'dist')));
 app.get('*', (req, res) => {
     res.sendFile(path.join(__dirname, 'dist', 'index.html'));
