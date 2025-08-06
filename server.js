@@ -86,17 +86,83 @@ if (process.env.GEMINI_API_KEY) {
     console.warn('WARNING: GEMINI_API_KEY is not set. AI features will be disabled.');
 }
 
-// --- YouTube API Helper ---
+
+// --- API Helpers ---
+let spotifyToken = { value: null, expiry: 0 };
+
+async function getSpotifyToken() {
+    if (spotifyToken.value && Date.now() < spotifyToken.expiry) {
+        return spotifyToken.value;
+    }
+
+    if (!process.env.SPOTIFY_CLIENT_ID || !process.env.SPOTIFY_CLIENT_SECRET) {
+        console.warn("Spotify credentials not set. Skipping song visuals search.");
+        return null;
+    }
+
+    try {
+        const response = await axios.post('https://accounts.spotify.com/api/token', 'grant_type=client_credentials', {
+            headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'Authorization': 'Basic ' + Buffer.from(process.env.SPOTIFY_CLIENT_ID + ':' + process.env.SPOTIFY_CLIENT_SECRET).toString('base64')
+            }
+        });
+
+        const tokenData = response.data;
+        spotifyToken = {
+            value: tokenData.access_token,
+            expiry: Date.now() + (tokenData.expires_in * 1000) - 60000 // Refresh 1 min before expiry
+        };
+        return spotifyToken.value;
+    } catch (error) {
+        console.error("Error getting Spotify token:", error.response ? error.response.data : error.message);
+        return null;
+    }
+}
+
+async function searchSpotifyTrack(query, token) {
+    if (!token) return null;
+    try {
+        const searchResponse = await axios.get('https://api.spotify.com/v1/search', {
+            headers: { 'Authorization': `Bearer ${token}` },
+            params: { q: query, type: 'track', limit: 1 }
+        });
+
+        const track = searchResponse.data.tracks.items[0];
+        if (!track) return null;
+
+        const album_art_url = track.album.images[0]?.url || null;
+        let artist_image_url = null;
+
+        const artistId = track.artists[0]?.id;
+        if (artistId) {
+            try {
+                const artistResponse = await axios.get(`https://api.spotify.com/v1/artists/${artistId}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                artist_image_url = artistResponse.data.images[1]?.url || artistResponse.data.images[0]?.url || null; // Prefer smaller image
+            } catch (artistError) {
+                console.error("Error fetching Spotify artist details:", artistError.response ? artistError.response.data : artistError.message);
+            }
+        }
+        
+        return { album_art_url, artist_image_url };
+    } catch (error) {
+        console.error("Error searching Spotify track:", error.response ? error.response.data : error.message);
+        return null;
+    }
+}
+
 async function searchYouTubeVideo(query) {
     if (!process.env.YOUTUBE_API_KEY) {
-        console.warn("YOUTUBE_API_KEY not set. Skipping YouTube search.");
+        console.warn("YouTube API Key not set. Skipping video search.");
         return null;
     }
     try {
         const response = await axios.get('https://www.googleapis.com/youtube/v3/search', {
             params: {
                 part: 'snippet',
-                q: `${query} official audio`, // Search for official audio for better results
+                q: `${query} official audio`,
                 key: process.env.YOUTUBE_API_KEY,
                 maxResults: 1,
                 type: 'video'
@@ -104,18 +170,14 @@ async function searchYouTubeVideo(query) {
         });
 
         if (response.data.items.length > 0) {
-            return {
-                videoId: response.data.items[0].id.videoId,
-                title: response.data.items[0].snippet.title
-            };
+            return { videoId: response.data.items[0].id.videoId };
         }
-        console.log(`No YouTube video found for query: ${query}`);
         return null;
     } catch (error) {
-        if (error.response) {
-            console.error("Error searching YouTube:", error.response.data.error ? error.response.data.error.message : "Unknown YouTube API error");
+        if (error.response && error.response.data && error.response.data.error.errors[0].reason === 'quotaExceeded') {
+             console.error("YouTube API Quota Exceeded. Please check your Google Cloud dashboard.");
         } else {
-             console.error("Error searching YouTube:", error.message);
+             console.error("Error searching YouTube:", error.response ? error.response.data : error.message);
         }
         return null;
     }
@@ -247,43 +309,47 @@ app.post('/api/analyze', authenticateToken, async (req, res) => {
     if (!ai) return res.status(503).json({ error: 'AI service is not configured on the server.' });
 
     try {
-        const { base64ImageData, persona, theme } = req.body;
         let userResult = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
         let user = userResult.rows[0];
         if (!user) return res.status(404).json({ error: 'User not found.' });
 
-        // --- ROBUST Daily Credit Reset Logic ---
         if (!user.is_premium) {
-            // Get today's date and last reset date as YYYY-MM-DD strings in UTC.
-            // This avoids timezone issues by using a standardized format for comparison.
-            const todayUTC = new Date().toISOString().slice(0, 10); 
-            const lastResetUTC = user.last_credit_reset 
-                ? new Date(user.last_credit_reset).toISOString().slice(0, 10) 
-                : '1970-01-01'; // Default for new users
-
+            const todayUTC = new Date().toISOString().slice(0, 10);
+            const lastResetUTC = user.last_credit_reset ? new Date(user.last_credit_reset).toISOString().slice(0, 10) : '1970-01-01';
             if (todayUTC > lastResetUTC) {
                 userResult = await pool.query(
                     'UPDATE users SET generation_credits = 5, last_credit_reset = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *',
                     [user.id]
                 );
-                user = userResult.rows[0]; // Refresh user data with updated credits
-                console.log(`Daily credits for user ${user.id} have been reset.`);
+                user = userResult.rows[0];
             }
         }
-        // --- End of Credit Reset Logic ---
 
         if (!user.is_premium && user.generation_credits <= 0) {
             return res.status(403).json({ error: 'Your free quota has been used up.', quotaExceeded: true });
         }
+        
+        const { base64ImageData, persona, theme } = req.body;
         if (!base64ImageData || !persona) return res.status(400).json({ error: 'Image data and persona are required.' });
 
         const analysisResults = await getAiAnalysis(base64ImageData, persona, theme);
-        
+
         const enrichedResults = await Promise.all(analysisResults.map(async (idea) => {
             if (idea.song && idea.song.title && idea.song.artist) {
-                const youtubeData = await searchYouTubeVideo(`${idea.song.title} ${idea.song.artist}`);
+                const query = `${idea.song.title} ${idea.song.artist}`;
+                const spotifyApiToken = await getSpotifyToken();
+
+                const [youtubeData, spotifyData] = await Promise.all([
+                    searchYouTubeVideo(query),
+                    searchSpotifyTrack(query, spotifyApiToken)
+                ]);
+
                 if (youtubeData) {
                     idea.song.videoId = youtubeData.videoId;
+                }
+                if (spotifyData) {
+                    idea.song.album_art_url = spotifyData.album_art_url;
+                    idea.song.artist_image_url = spotifyData.artist_image_url;
                 }
             }
             return idea;
@@ -294,6 +360,7 @@ app.post('/api/analyze', authenticateToken, async (req, res) => {
         }
         
         res.json({ analysis: enrichedResults });
+
     } catch (error) {
         console.error("Error in /api/analyze:", error);
         res.status(500).json({ error: error.message || 'Failed to analyze content.' });
@@ -309,7 +376,7 @@ app.post('/api/forgot-password', async (req, res) => {
         const user = userResult.rows[0];
 
         if (!user) {
-            // To prevent email enumeration, always return a success-like message.
+            // Important: Don't reveal if an email exists for security reasons
             return res.json({ message: 'If your email is registered, you will receive a reset link.' });
         }
 
@@ -329,8 +396,8 @@ app.post('/api/forgot-password', async (req, res) => {
             },
         });
 
-        // Use the production URL for the reset link
-        const resetLink = `${req.protocol}://${req.get('host')}/reset-password?token=${token}`;
+        // Use the frontend URL for the reset link
+        const resetLink = `https://celetuk.site/index.html?token=${token}`;
 
         await transporter.sendMail({
             to: user.email,
@@ -455,7 +522,14 @@ app.post('/api/history', authenticateToken, async (req, res) => {
 app.use(express.static(path.join(__dirname, 'dist')));
 
 app.get('*', (req, res) => {
-    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+    if (req.query.token) {
+        // If a password reset token is in the query, serve index.html
+        // The frontend JS will handle the token from the URL params
+        res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+    } else {
+        // For all other routes, let the frontend handle routing
+        res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+    }
 });
 
 

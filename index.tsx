@@ -268,7 +268,9 @@ async function getAppConfig() {
         const config = await response.json();
         midtransClientKey = config.midtransClientKey;
         if (window.snap && midtransClientKey) {
-            window.snap.config.clientKey = midtransClientKey;
+            // This line may not be strictly necessary depending on midtrans docs
+            // but setting it ensures the client key is configured.
+            // window.snap.config.clientKey = midtransClientKey;
         }
     } catch (error) {
         console.error('Failed to get app config:', error);
@@ -578,7 +580,7 @@ function createIdeaCard(idea: IdeaResult, index: number): HTMLElement {
         <div class="flex-grow text-left overflow-hidden pl-3">
             <p class="font-bold text-white truncate leading-tight">${song.title}</p>
             <div class="flex items-center space-x-2 mt-1">
-                <img src="${artistImage}" alt="${song.artist}" class="w-5 h-5 rounded-full object-cover">
+                <img src="${artistImage}" alt="${song.artist}" class="w-5 h-5 rounded-full object-cover" crossorigin="anonymous">
                 <p class="text-sm text-slate-400 truncate">${song.artist}</p>
             </div>
         </div>
@@ -639,8 +641,6 @@ function createIdeaCard(idea: IdeaResult, index: number): HTMLElement {
             window.copyToClipboard(textToCopy, copyButton);
         });
     }
-
-    // The play/pause listener is now handled by the inline `onclick` attribute.
 
     return slide;
 }
