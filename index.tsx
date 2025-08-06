@@ -1,4 +1,5 @@
 
+
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -120,6 +121,10 @@ const mobileLogoutButton = document.getElementById('mobileLogoutButton') as HTML
 // --- Audio Player Icons ---
 const playIconSVG = `<svg class="play-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>`;
 const pauseIconSVG = `<svg class="pause-icon hidden" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>`;
+
+// --- Audio Preview Timing ---
+const PREVIEW_START_TIME = 7.5; // Mulai dari detik ke-7.5
+const PREVIEW_DURATION = 15;   // Mainkan selama 15 detik
 
 
 // --- State Variables ---
@@ -722,14 +727,25 @@ async function handleAnalyzeClick() {
         });
 
         if (!response.ok) {
-            const errorData = await response.json();
-            if (response.status === 403 && errorData.quotaExceeded) {
-                // Specific handling for quota error: show subscription modal
-                openSubscriptionModal();
-                goBackToPreview();
-                return;
+            let errorToThrow: Error;
+            const contentType = response.headers.get("content-type");
+
+            if (contentType && contentType.includes("application/json")) {
+                const errorData = await response.json().catch(() => ({ error: "Gagal mem-parsing respons error dari server." }));
+                if (response.status === 403 && errorData.quotaExceeded) {
+                    openSubscriptionModal();
+                    goBackToPreview();
+                    return; // Exit function, modal is shown.
+                }
+                errorToThrow = new Error(errorData.error || `Terjadi kesalahan dengan status ${response.status}`);
+            } else {
+                if (response.status === 413) {
+                    errorToThrow = new Error("Ukuran file gambar terlalu besar. Coba unggah gambar di bawah 10MB.");
+                } else {
+                    errorToThrow = new Error(`Terjadi kesalahan pada server (Status: ${response.status}). Coba lagi nanti.`);
+                }
             }
-            throw new Error(errorData.error || "Gagal mendapatkan respons dari server.");
+            throw errorToThrow;
         }
 
         const { analysis }: { analysis: IdeaResult[] } = await response.json();
@@ -847,7 +863,8 @@ function createSlideHTML(idea: IdeaResult): string {
  */
 function setupAudioPlayers() {
     const allPlayButtons = document.querySelectorAll('.play-pause-btn');
-    
+    let activeAudioTimeout: number | null = null; // Variabel untuk menyimpan timer
+
     allPlayButtons.forEach(button => {
         // Hanya tambahkan listener ke tombol <button> yang bisa diputar, bukan link <a>
         if (button.tagName.toLowerCase() !== 'button') return;
@@ -858,48 +875,66 @@ function setupAudioPlayers() {
         const pauseIcon = button.querySelector('.pause-icon');
 
         if (audio && playIcon && pauseIcon) {
-            let playTimeout: number | undefined;
-
-            const stopPlayback = () => {
-                playIcon.classList.remove('hidden');
-                pauseIcon.classList.add('hidden');
-                if (playTimeout) {
-                    clearTimeout(playTimeout);
-                    playTimeout = undefined;
-                }
-            }
-
             button.addEventListener('click', (event) => {
                 event.stopPropagation();
                 
                 // Hentikan semua audio lain dan reset ikonnya
                 document.querySelectorAll<HTMLAudioElement>('.audio-preview').forEach(otherAudio => {
                     if (otherAudio !== audio) {
-                        otherAudio.pause(); // Ini akan memicu listener 'pause' pada audio lain
+                        otherAudio.pause();
+                        const otherButton = otherAudio.closest('.slide')?.querySelector('.play-pause-btn');
+                        if (otherButton) {
+                            otherButton.querySelector('.play-icon')?.classList.remove('hidden');
+                            otherButton.querySelector('.pause-icon')?.classList.add('hidden');
+                        }
                     }
                 });
 
+                // Hapus timer yang sedang berjalan (jika ada)
+                if (activeAudioTimeout) {
+                    clearTimeout(activeAudioTimeout);
+                    activeAudioTimeout = null;
+                }
+
                 // Putar atau jeda audio yang ini
                 if (audio.paused) {
+                    // Atur titik mulai sebelum memutar
+                    audio.currentTime = PREVIEW_START_TIME;
                     audio.play().catch(e => console.error("Error playing audio:", e));
+                    
                     playIcon.classList.add('hidden');
                     pauseIcon.classList.remove('hidden');
-
-                    // Set timeout untuk menjeda lagu setelah 15 detik
-                    if (playTimeout) clearTimeout(playTimeout);
-                    playTimeout = window.setTimeout(() => {
-                        if (!audio.paused) {
-                            audio.pause();
-                        }
-                    }, 15000);
+                    
+                    // Setel timer untuk berhenti setelah 15 detik
+                    activeAudioTimeout = window.setTimeout(() => {
+                        audio.pause();
+                    }, PREVIEW_DURATION * 1000);
 
                 } else {
-                    audio.pause(); // Ini akan memicu event 'pause' yang akan memanggil stopPlayback
+                    audio.pause();
                 }
             });
 
-            audio.addEventListener('pause', stopPlayback);
-            audio.addEventListener('ended', stopPlayback);
+            // Listener untuk saat audio di-pause (baik oleh user maupun otomatis)
+            audio.addEventListener('pause', () => {
+                playIcon.classList.remove('hidden');
+                pauseIcon.classList.add('hidden');
+                // Hapus timer jika lagu dihentikan secara manual
+                if (activeAudioTimeout) {
+                    clearTimeout(activeAudioTimeout);
+                    activeAudioTimeout = null;
+                }
+            });
+
+            // Listener untuk saat audio selesai secara alami (bukan karena timeout)
+            audio.addEventListener('ended', () => {
+                playIcon.classList.remove('hidden');
+                pauseIcon.classList.add('hidden');
+                if (activeAudioTimeout) {
+                    clearTimeout(activeAudioTimeout);
+                    activeAudioTimeout = null;
+                }
+            });
         }
     });
 }
