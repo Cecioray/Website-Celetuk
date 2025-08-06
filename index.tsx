@@ -1,5 +1,3 @@
-
-
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -7,17 +5,17 @@
 
 export {};
 
-// NOTE: The GoogleGenAI import has been removed from the client-side code.
-
 // --- Type Declarations for CDN Libraries ---
 declare const gsap: any;
 declare const ScrollTrigger: any;
+declare const Spotify: any;
 
-// TypeScript type augmentation for Midtrans Snap.js
+// TypeScript type augmentation for Midtrans Snap.js & Spotify
 declare global {
     interface Window {
         snap: any;
         copyToClipboard: (text: string, button: HTMLButtonElement) => void;
+        onSpotifyWebPlaybackSDKReady: () => void;
     }
 }
 
@@ -45,10 +43,6 @@ const errorMessage = document.getElementById('errorMessage') as HTMLParagraphEle
 const resetButton = document.getElementById('resetButton') as HTMLButtonElement;
 const backFromLoaderButton = document.getElementById('backFromLoaderButton') as HTMLButtonElement;
 const backFromResultsButton = document.getElementById('backFromResultsButton') as HTMLButtonElement;
-
-// --- New Result Preview Selectors ---
-const resultImagePreviewContainer = document.getElementById('resultImagePreviewContainer') as HTMLElement;
-const resultImagePreview = document.getElementById('resultImagePreview') as HTMLImageElement;
 
 // --- Subscription Modal Selectors ---
 const subscriptionModal = document.getElementById('subscriptionModal') as HTMLElement;
@@ -99,7 +93,6 @@ const confirmPasswordInput = document.getElementById('confirmPasswordInput') as 
 const resetPasswordSubmitButton = document.getElementById('resetPasswordSubmitButton') as HTMLButtonElement;
 const resetPasswordModalError = document.getElementById('resetPasswordModalError') as HTMLParagraphElement;
 
-
 const historyNavButton = document.getElementById('historyNavButton') as HTMLAnchorElement;
 const historyGrid = document.getElementById('historyGrid') as HTMLElement;
 const historyEmptyState = document.getElementById('historyEmptyState') as HTMLElement;
@@ -118,14 +111,14 @@ const mobileUserProfile = document.getElementById('mobileUserProfile') as HTMLEl
 const mobileUserEmail = document.getElementById('mobileUserEmail') as HTMLParagraphElement;
 const mobileLogoutButton = document.getElementById('mobileLogoutButton') as HTMLButtonElement;
 
-// --- Audio Player Icons ---
+// --- Spotify SDK Selectors & Icons ---
+const connectSpotifyButton = document.getElementById('connectSpotifyButton') as HTMLButtonElement;
 const playIconSVG = `<svg class="play-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>`;
 const pauseIconSVG = `<svg class="pause-icon hidden" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>`;
 
 // --- Audio Preview Timing ---
-const PREVIEW_START_TIME = 7.5; // Mulai dari detik ke-7.5
-const PREVIEW_DURATION = 15;   // Mainkan selama 15 detik
-
+const PREVIEW_START_TIME_MS = 7.5 * 1000;
+const PREVIEW_DURATION_MS = 15 * 1000;
 
 // --- State Variables ---
 let base64ImageData: string | null = null;
@@ -137,6 +130,13 @@ const API_BASE_URL = ''; // Now served from same origin
 let analysisAbortController: AbortController | null = null;
 let passwordResetToken: string | null = null;
 
+// Spotify SDK State
+let spotifyPlayer: any = null;
+let spotifyDeviceId: string | null = null;
+let spotifyAccessToken: string | null = null;
+let activePlaybackTimeout: number | null = null;
+let currentPlayingUri: string | null = null;
+let currentHtmlAudio: HTMLAudioElement | null = null;
 
 // --- Type Definitions ---
 interface User {
@@ -153,6 +153,7 @@ interface Song {
     album_art_url?: string;
     preview_url?: string;
     artist_image_url?: string;
+    uri?: string;
 }
 
 interface IdeaResult {
@@ -194,1160 +195,1013 @@ async function fetchWithAuth(url: string, options: RequestInit = {}) {
 }
 
 /**
- * Fetches necessary configuration from the backend.
+ * Fetches essential config from the server like API keys.
  */
-async function fetchConfig() {
+async function getAppConfig() {
     try {
         const response = await fetch(`${API_BASE_URL}/api/config`);
-        if (!response.ok) throw new Error('Gagal memuat konfigurasi.');
         const config = await response.json();
         midtransClientKey = config.midtransClientKey;
-        // Set the client key for the Midtrans script tag
-        const snapScript = document.querySelector('script[src="https://app.midtrans.com/snap/snap.js"]');
-        if (snapScript) {
-            snapScript.setAttribute('data-client-key', midtransClientKey!);
+        if (window.snap && midtransClientKey) {
+            window.snap.config.clientKey = midtransClientKey;
         }
     } catch (error) {
-        console.error("Error fetching config:", error);
-        showError("Gagal memuat konfigurasi aplikasi. Beberapa fitur mungkin tidak berfungsi.");
+        console.error('Failed to get app config:', error);
+        showError('Gagal memuat konfigurasi aplikasi. Beberapa fitur mungkin tidak berfungsi.');
     }
 }
 
-
 /**
- * Checks if a user is logged in by verifying the token with the backend.
+ * Checks for a valid token and fetches user data.
  */
-async function checkAuthStatus() {
+async function checkLoginStatus() {
     const token = localStorage.getItem('authToken');
-    if (token) {
-        try {
-            const response = await fetchWithAuth(`${API_BASE_URL}/api/me`);
-            if (!response.ok) {
-                throw new Error('Token tidak valid');
-            }
-            currentUser = await response.json();
-            updateUserUI();
-        } catch (error) {
-            console.error("Auth check failed:", error);
-            handleLogout();
-        }
-    } else {
-        updateUserUI();
+    if (!token) {
+        updateUserUI(null);
+        return;
+    }
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/api/me`);
+        if (!response.ok) throw new Error('Failed to fetch user');
+        const user = await response.json();
+        currentUser = user;
+        updateUserUI(user);
+    } catch (error) {
+        console.error('Login check failed:', error);
+        handleLogout();
     }
 }
 
 /**
- * Handles user login and registration submission.
+ * Handles the user login/registration process.
  */
-async function handleAuthSubmit(event: Event) {
+async function handleAuth(event: Event) {
     event.preventDefault();
+    loginModalError.classList.add('hidden');
+    loginSubmitButton.disabled = true;
+    loginSubmitButton.innerHTML = `<div class="loader-small !border-t-slate-800 !w-6 !h-6 !border-2"></div>`;
+
     const email = loginEmailInput.value;
     const password = loginPasswordInput.value;
     const endpoint = isLoginMode ? '/api/login' : '/api/register';
-    
-    loginModalError.classList.add('hidden');
-    loginSubmitButton.disabled = true;
-    loginSubmitButton.innerHTML = `<div class="loader-small" style="width: 24px; height: 24px; border-width: 3px; border-top-color: var(--color-bg-start);"></div>`;
 
     try {
-        if (!isLoginMode) { // Registration
-            const regResponse = await fetch(`${API_BASE_URL}${endpoint}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email, password }),
-            });
-            const regData = await regResponse.json();
-            if (!regResponse.ok) throw new Error(regData.error || 'Gagal mendaftar.');
-        }
-        
-        // Login
-        const loginResponse = await fetch(`${API_BASE_URL}/api/login`, {
+        const response = await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email, password }),
+            body: JSON.stringify({ email, password })
         });
-        const loginData = await loginResponse.json();
-        if (!loginResponse.ok) throw new Error(loginData.error || 'Gagal login.');
+        const data = await response.json();
 
-        localStorage.setItem('authToken', loginData.token);
-        await checkAuthStatus();
-        closeLoginModal();
+        if (!response.ok) {
+            throw new Error(data.error || `Gagal ${isLoginMode ? 'login' : 'mendaftar'}.`);
+        }
 
+        if (isLoginMode) {
+            localStorage.setItem('authToken', data.token);
+            await checkLoginStatus();
+            closeLoginModal();
+        } else {
+            // Switch to login view with a success message
+            showError(data.message, 'success');
+            setTimeout(() => {
+                loginModalError.classList.add('hidden');
+                switchAuthMode(true);
+            }, 1000);
+        }
     } catch (error: any) {
-        loginModalError.textContent = error.message || "Terjadi kesalahan.";
-        loginModalError.classList.remove('hidden');
+        showError(error.message);
     } finally {
         loginSubmitButton.disabled = false;
         loginSubmitButton.textContent = isLoginMode ? 'Masuk' : 'Daftar';
     }
 }
 
+/**
+ * Handles user logout.
+ */
 function handleLogout() {
-    currentUser = null;
     localStorage.removeItem('authToken');
-    updateUserUI();
-    showPage('page-home');
-    resetUI();
+    localStorage.removeItem('spotifyAccessToken');
+    currentUser = null;
+    spotifyAccessToken = null;
+    spotifyPlayer = null;
+    spotifyDeviceId = null;
+    updateUserUI(null);
+    if (pageRiwayat.style.display !== 'none') {
+        showPage('home');
+    }
 }
 
-
-// --- Core Functions ---
+// --- Spotify SDK Integration ---
 
 /**
- * Shows a specific page view (either the main scrolling content or the history page).
- * @param pageId The ID of the page/view to show.
+ * Initializes the Spotify Web Playback SDK integration.
+ * Checks for an access token from the redirect and sets up the player.
  */
-function showPage(pageId: string) {
-    mainContentScrollContainer.classList.add('hidden');
-    pageRiwayat.classList.add('hidden');
+function initializeSpotifyIntegration() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const tokenFromUrl = urlParams.get('spotify_access_token');
+    const errorFromUrl = urlParams.get('spotify_error');
 
-    if (pageId === 'page-riwayat') {
-        pageRiwayat.classList.remove('hidden');
-        renderHistoryPage();
+    if (errorFromUrl) {
+        showError(`Gagal menghubungkan ke Spotify: ${errorFromUrl}`);
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return;
+    }
+
+    if (tokenFromUrl) {
+        spotifyAccessToken = tokenFromUrl;
+        localStorage.setItem('spotifyAccessToken', tokenFromUrl);
+        window.history.replaceState({}, document.title, window.location.pathname);
     } else {
-        // Default to showing the main scrollable content
-        mainContentScrollContainer.classList.remove('hidden');
-        if(pageId === 'page-home') {
-             const homeElement = document.getElementById('home');
-             homeElement?.scrollIntoView({ behavior: 'smooth' });
+        spotifyAccessToken = localStorage.getItem('spotifyAccessToken');
+    }
+
+    if (spotifyAccessToken) {
+        // The SDK script will call this function once it's loaded
+        window.onSpotifyWebPlaybackSDKReady = () => {
+            if (!spotifyAccessToken) return;
+            spotifyPlayer = new Spotify.Player({
+                name: 'Celetuk Web Player',
+                getOAuthToken: (cb: (token: string) => void) => {
+                    cb(spotifyAccessToken!);
+                },
+                volume: 0.5
+            });
+
+            // Error handling
+            spotifyPlayer.addListener('initialization_error', ({ message }: { message: string }) => { 
+                console.error('Spotify Init Error:', message); 
+                localStorage.removeItem('spotifyAccessToken');
+                spotifyAccessToken = null;
+                updateSpotifyButtonState(false);
+            });
+            spotifyPlayer.addListener('authentication_error', ({ message }: { message: string }) => { 
+                console.error('Spotify Auth Error:', message);
+                localStorage.removeItem('spotifyAccessToken');
+                spotifyAccessToken = null;
+                updateSpotifyButtonState(false);
+                showError('Sesi Spotify Anda berakhir. Silakan hubungkan kembali.');
+            });
+            spotifyPlayer.addListener('account_error', ({ message }: { message: string }) => { 
+                console.error('Spotify Account Error:', message); 
+                showError('Error akun Spotify. Pastikan Anda menggunakan akun Premium.');
+            });
+            spotifyPlayer.addListener('playback_error', ({ message }: { message: string }) => { console.error('Spotify Playback Error:', message); });
+
+            // Player state changes
+            spotifyPlayer.addListener('player_state_changed', (state: any) => {
+                if (!state) {
+                    if (currentPlayingUri) resetAllPlayButtons();
+                    return;
+                }
+                if (state.paused && state.track_window.current_track.uri === currentPlayingUri) {
+                    resetAllPlayButtons();
+                }
+             });
+
+            // Ready
+            spotifyPlayer.addListener('ready', ({ device_id }: { device_id: string }) => {
+                console.log('Ready with Device ID', device_id);
+                spotifyDeviceId = device_id;
+                updateSpotifyButtonState(true);
+            });
+
+            // Not Ready
+            spotifyPlayer.addListener('not_ready', ({ device_id }: { device_id: string }) => {
+                console.log('Device ID has gone offline', device_id);
+                spotifyDeviceId = null;
+                updateSpotifyButtonState(false);
+            });
+
+            spotifyPlayer.connect().then((success: boolean) => {
+                if (success) console.log('The Spotify Player has connected successfully!');
+            });
+        };
+    }
+}
+
+/**
+ * Updates the 'Connect Spotify' button based on connection status.
+ * @param {boolean} isConnected - Whether the Spotify player is connected.
+ */
+function updateSpotifyButtonState(isConnected: boolean) {
+    if (connectSpotifyButton) {
+        if(isConnected) {
+            const checkIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="text-green-400" viewBox="0 0 16 16"><path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/></svg>`;
+            connectSpotifyButton.innerHTML = `${checkIcon} <span>Spotify Terhubung</span>`;
+            connectSpotifyButton.disabled = true;
+            connectSpotifyButton.classList.remove('btn-secondary');
+            connectSpotifyButton.classList.add('cursor-default', 'opacity-80');
+        } else {
+            const spotifyIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="text-green-400" viewBox="0 0 16 16"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0m3.669 11.538a.498.498 0 0 1-.686.165c-1.879-1.147-4.243-1.407-7.028-.77a.499.499 0 0 1-.222-.973c3.048-.696 5.662-.397 7.77.892a.5.5 0 0 1 .166.686m.979-2.178a.624.624 0 0 1-.858.205c-2.15-1.321-5.428-1.704-7.972-.932a.625.625 0 0 1-.362-1.194c2.905-.881 6.517-.454 8.986 1.063a.624.624 0 0 1 .206.858m.084-2.268C10.154 5.56 5.9 5.419 3.438 6.166a.748.748 0 1 1-.434-1.437c2.766-.835 7.352-.639 9.609 1.079a.747.747 0 1 1-1.225.825"/></svg>`;
+            connectSpotifyButton.innerHTML = `${spotifyIcon} <span>Hubungkan Spotify</span>`;
+            connectSpotifyButton.disabled = false;
+            connectSpotifyButton.classList.add('btn-secondary');
+            connectSpotifyButton.classList.remove('cursor-default', 'opacity-80');
         }
     }
 }
 
 /**
- * Resets the main app UI to its initial state, keeping the user logged in.
+ * Handles toggling playback for a song, deciding between Spotify SDK and HTML5 Audio.
+ * @param {Song} song - The song object with URI and preview URL.
+ * @param {HTMLButtonElement} buttonEl - The play/pause button that was clicked.
  */
-function resetUI() {
-    personaContainer.classList.remove('hidden');
-    mainAppInterface.classList.add('hidden');
-    
-    uploadContainer.classList.remove('hidden');
-    imagePreviewContainer.classList.add('hidden');
-    resultsContainer.classList.add('hidden');
-    loaderContainer.classList.add('hidden');
-    errorContainer.classList.add('hidden');
-    
-    fileInput.value = '';
-    themeInput.value = '';
-    base64ImageData = null;
-    userPersona = null;
-    imagePreview.src = '#';
-    personaButtons.forEach(btn => btn.classList.remove('selected'));
-    
-    updatePremiumUI();
-}
+async function toggleSongPlayback(song: Song, buttonEl: HTMLButtonElement) {
+    const isPlaying = buttonEl.classList.contains('playing');
+    const clickedUri = song.uri;
 
-/**
- * Returns the user to the image preview screen from the loader or results.
- */
-function goBackToPreview() {
-    // If an analysis is running, abort it.
-    if (analysisAbortController) {
-        analysisAbortController.abort();
-        analysisAbortController = null; // Clear the controller
+    // Stop any currently playing audio (both Spotify and HTML5)
+    if (spotifyPlayer && !spotifyPlayer.paused) spotifyPlayer.pause();
+    if (currentHtmlAudio) {
+        currentHtmlAudio.pause();
+        currentHtmlAudio = null;
     }
     
-    // Reset UI to the preview state
-    loaderContainer.classList.add('hidden');
-    resultsContainer.classList.add('hidden');
-    errorContainer.classList.add('hidden');
-    imagePreviewContainer.classList.remove('hidden');
+    // Clear any pending pause timeout
+    if (activePlaybackTimeout) clearTimeout(activePlaybackTimeout);
+    
+    // Reset all buttons *before* starting new playback
+    resetAllPlayButtons();
+
+    if (isPlaying) {
+        // If the clicked button was playing, we just stop it. The reset call handles the UI.
+        return;
+    }
+
+    // --- Start new playback ---
+    // Prioritize Spotify SDK if connected and track is available
+    if (spotifyPlayer && spotifyDeviceId && clickedUri && spotifyAccessToken) {
+        try {
+            await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${spotifyDeviceId}`, {
+                method: 'PUT',
+                body: JSON.stringify({ uris: [clickedUri], position_ms: PREVIEW_START_TIME_MS }),
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${spotifyAccessToken}` },
+            });
+            updatePlayButtonState(buttonEl, true);
+            currentPlayingUri = clickedUri;
+            activePlaybackTimeout = window.setTimeout(() => {
+                if (spotifyPlayer) spotifyPlayer.pause();
+                resetAllPlayButtons();
+            }, PREVIEW_DURATION_MS);
+        } catch (error) {
+            console.error('Failed to play via Spotify SDK', error);
+            showError("Gagal memulai pemutaran di Spotify. Coba hubungkan ulang.");
+        }
+    } 
+    // Fallback to HTML5 Audio if preview URL exists
+    else if (song.preview_url) {
+        currentHtmlAudio = new Audio(song.preview_url);
+        currentHtmlAudio.play().catch(e => console.error("Audio playback error:", e));
+        updatePlayButtonState(buttonEl, true);
+        currentPlayingUri = song.preview_url; // Use URL as a unique ID for fallback
+        currentHtmlAudio.addEventListener('ended', resetAllPlayButtons);
+        activePlaybackTimeout = window.setTimeout(() => {
+            if (currentHtmlAudio) currentHtmlAudio.pause();
+            resetAllPlayButtons();
+        }, PREVIEW_DURATION_MS); // Use shorter duration for HTML audio previews
+    } 
+    // No playable source
+    else {
+        showError('Tidak ada preview lagu yang tersedia.');
+    }
 }
 
+
+// --- UI & Application Flow ---
 
 /**
- * Displays an error message to the user.
- * @param message The error message to display.
+ * Updates the UI based on the user's login status.
+ * @param {User | null} user - The current user object or null if logged out.
  */
-function showError(message: string) {
-    errorMessage.textContent = message;
-    errorContainer.classList.remove('hidden');
-}
-
-function updateUserUI() {
-    if (currentUser) {
-        // Desktop
+function updateUserUI(user: User | null) {
+    if (user) {
+        // Desktop UI
         loginNavButton.classList.add('hidden');
         userProfile.classList.remove('hidden');
-        userEmailSpan.textContent = currentUser.email;
-        historyNavButton.classList.remove('hidden');
-        
-        // Mobile
+        userEmailSpan.textContent = user.email;
+        if (user.is_premium) {
+            userStatusContainer.classList.add('hidden');
+            connectSpotifyButton.classList.remove('hidden');
+            updateSpotifyButtonState(!!spotifyDeviceId);
+            historyNavButton.classList.remove('hidden');
+        } else {
+            userStatusContainer.classList.remove('hidden');
+            userCredits.textContent = `Sisa credits: ${user.generation_credits}`;
+            connectSpotifyButton.classList.add('hidden');
+            historyNavButton.classList.add('hidden');
+        }
+
+        // Mobile UI
         mobileLoginButton.classList.add('hidden');
         mobileUserProfile.classList.remove('hidden');
-        mobileUserEmail.textContent = currentUser.email;
-
-        // User Status/Credits Display
-        userStatusContainer.classList.remove('hidden');
-        if (currentUser.is_premium) {
-            userCredits.innerHTML = `Status: <span class="font-bold text-accent">Premium</span>`;
+        mobileUserEmail.textContent = user.email;
+        if(user.is_premium) {
+            mobileHistoryNavButton.classList.remove('hidden');
         } else {
-            const credits = currentUser.generation_credits ?? 0;
-            userCredits.innerHTML = `Sisa Kuota: <span class="font-bold text-accent-light">${credits}</span>`;
+            mobileHistoryNavButton.classList.add('hidden');
         }
     } else {
-        // Desktop
+        // Desktop UI
         loginNavButton.classList.remove('hidden');
         userProfile.classList.add('hidden');
+        userStatusContainer.classList.add('hidden');
+        connectSpotifyButton.classList.add('hidden');
         historyNavButton.classList.add('hidden');
-        
-        // Mobile
+
+        // Mobile UI
         mobileLoginButton.classList.remove('hidden');
         mobileUserProfile.classList.add('hidden');
         mobileHistoryNavButton.classList.add('hidden');
-        
-        // Hide status display
-        userStatusContainer.classList.add('hidden');
     }
-    updatePremiumUI();
 }
 
-
-// --- Modal Handling (Login, Subscription, History, Mobile Menu) ---
-
-function openLoginModal() {
-    switchToAuthView();
-    loginModal.classList.remove('hidden');
-}
-
-function closeLoginModal() {
-    loginModal.classList.add('hidden');
+/**
+ * Switches between the Login and Register forms.
+ * @param {boolean} toLogin - True to show login, false for register.
+ */
+function switchAuthMode(toLogin: boolean) {
+    isLoginMode = toLogin;
+    loginModalError.classList.add('hidden');
+    loginModalTitle.textContent = toLogin ? 'Login' : 'Daftar';
+    loginSubmitButton.textContent = toLogin ? 'Masuk' : 'Daftar';
+    loginSwitchPrompt.textContent = toLogin ? 'Belum punya akun?' : 'Sudah punya akun?';
+    loginSwitchLink.textContent = toLogin ? 'Daftar di sini' : 'Login di sini';
+    forgotPasswordLink.classList.toggle('hidden', !toLogin);
     loginForm.reset();
-    forgotPasswordForm.reset();
-    loginModalError.classList.add('hidden');
-    forgotPasswordModalError.classList.add('hidden');
-    forgotPasswordModalSuccess.classList.add('hidden');
 }
 
-function switchAuthMode() {
-    isLoginMode = !isLoginMode;
-    loginModalTitle.textContent = isLoginMode ? 'Login' : 'Daftar';
-    loginSubmitButton.textContent = isLoginMode ? 'Masuk' : 'Daftar';
-    loginSwitchPrompt.textContent = isLoginMode ? 'Belum punya akun?' : 'Sudah punya akun?';
-    loginSwitchLink.textContent = isLoginMode ? 'Daftar di sini' : 'Login di sini';
-    loginModalError.classList.add('hidden');
-}
-
-function switchToAuthView() {
-    authView.classList.remove('hidden');
-    forgotPasswordView.classList.add('hidden');
-}
-
-function switchToForgotPasswordView() {
-    authView.classList.add('hidden');
-    forgotPasswordView.classList.remove('hidden');
-}
-
-function openSubscriptionModal() {
-    if (!currentUser) {
-        openLoginModal();
-        return;
-    }
-    subscriptionModal.classList.remove('hidden');
-}
-
-function closeSubscriptionModal() {
-    subscriptionModal.classList.add('hidden');
-    setTimeout(() => {
-        modalInfoView.classList.remove('hidden');
-        modalProcessingView.classList.add('hidden');
-        initiatePaymentButton.disabled = false;
-        initiatePaymentButton.innerHTML = "Langganan Sekarang";
-    }, 300); 
-}
-
-function openMobileMenu() {
-    mobileMenu.classList.remove('hidden');
-    mobileMenu.classList.add('fade-in');
-}
-
-function closeMobileMenu() {
-    mobileMenu.classList.add('hidden');
-    mobileMenu.classList.remove('fade-in');
-}
-
-function openResetPasswordModal() {
-    resetPasswordModal.classList.remove('hidden');
-}
-
-function closeResetPasswordModal() {
-    resetPasswordModal.classList.add('hidden');
-    resetPasswordForm.reset();
-    resetPasswordModalError.classList.add('hidden');
-}
-
-
-// --- Password Reset ---
-async function handleForgotPassword(event: Event) {
-    event.preventDefault();
-    forgotPasswordModalError.classList.add('hidden');
-    forgotPasswordModalSuccess.classList.add('hidden');
-    forgotPasswordSubmitButton.disabled = true;
-    forgotPasswordSubmitButton.innerHTML = `<div class="loader-small" style="border-top-color: var(--color-bg-start);"></div>`;
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/forgot-password`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email: forgotPasswordEmail.value }),
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Gagal mengirim email.');
-
-        forgotPasswordModalSuccess.textContent = 'Link reset telah dikirim. Silakan periksa email Anda.';
-        forgotPasswordModalSuccess.classList.remove('hidden');
-        forgotPasswordForm.reset();
-    } catch (error: any) {
-        forgotPasswordModalError.textContent = error.message;
-        forgotPasswordModalError.classList.remove('hidden');
-    } finally {
-        forgotPasswordSubmitButton.disabled = false;
-        forgotPasswordSubmitButton.textContent = 'Kirim Link';
-    }
-}
-
-async function handleResetPassword(event: Event) {
-    event.preventDefault();
-    if (resetPasswordInput.value !== confirmPasswordInput.value) {
-        resetPasswordModalError.textContent = 'Password tidak cocok.';
-        resetPasswordModalError.classList.remove('hidden');
-        return;
-    }
-    if (!passwordResetToken) {
-        resetPasswordModalError.textContent = 'Token reset tidak ditemukan.';
-        resetPasswordModalError.classList.remove('hidden');
-        return;
-    }
-
-    resetPasswordModalError.classList.add('hidden');
-    resetPasswordSubmitButton.disabled = true;
-    resetPasswordSubmitButton.innerHTML = `<div class="loader-small" style="border-top-color: var(--color-bg-start);"></div>`;
-
-    try {
-        const response = await fetch(`${API_BASE_URL}/api/reset-password`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                token: passwordResetToken,
-                password: resetPasswordInput.value,
-            }),
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || 'Gagal mereset password.');
-        
-        alert('Password berhasil direset! Silakan login dengan password baru Anda.');
-        closeResetPasswordModal();
-        openLoginModal();
-    } catch (error: any) {
-        resetPasswordModalError.textContent = error.message;
-        resetPasswordModalError.classList.remove('hidden');
-    } finally {
-        resetPasswordSubmitButton.disabled = false;
-        resetPasswordSubmitButton.textContent = 'Reset Password';
-    }
-}
-
-
-// --- Subscription and Payment ---
-
-async function initiateMidtransPayment() {
-    if (!currentUser) {
-        showError("Anda harus login untuk melanjutkan pembayaran.");
-        openLoginModal();
-        return;
-    }
-
-    initiatePaymentButton.disabled = true;
-    initiatePaymentButton.innerHTML = `<div class="loader-small" style="border-top-color: var(--color-bg-start);"></div>`;
-
-    try {
-        const response = await fetchWithAuth(`${API_BASE_URL}/api/create-transaction`, {
-            method: 'POST',
-            body: JSON.stringify({ amount: 10000 }),
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Gagal membuat transaksi di server.');
-        }
-
-        const { token } = await response.json();
-        if (!token) throw new Error("Token transaksi tidak diterima.");
-
-        window.snap.pay(token, {
-            onSuccess: function(result: any){
-                console.log('success', result);
-                processPayment("Pembayaran berhasil! Memperbarui status akun Anda...");
-            },
-            onPending: function(result: any){
-                console.log('pending', result);
-                alert("Pembayaran Anda sedang diproses. Status akun akan diperbarui setelah pembayaran dikonfirmasi.");
-                closeSubscriptionModal();
-            },
-            onError: function(result: any){
-                console.log('error', result);
-                showError("Terjadi kesalahan saat memproses pembayaran. Silakan coba lagi.");
-                closeSubscriptionModal();
-            },
-            onClose: function(){
-                initiatePaymentButton.disabled = false;
-                initiatePaymentButton.textContent = "Langganan Sekarang";
-            }
-        });
-
-    } catch (error: any) {
-        console.error("Inisiasi pembayaran gagal:", error);
-        showError(error.message || "Gagal memulai sesi pembayaran.");
-        initiatePaymentButton.disabled = false;
-        initiatePaymentButton.textContent = "Langganan Sekarang";
-    }
-}
-
-function processPayment(message: string = "Memproses pembayaran...") {
-    modalInfoView.classList.add('hidden');
-    processingMessage.textContent = message;
-    modalProcessingView.classList.remove('hidden');
-
-    // Wait for a few seconds to let the webhook process, then refresh user data
-    setTimeout(async () => {
-        await checkAuthStatus(); // Re-fetch user data from server
-        closeSubscriptionModal();
-        alert('Selamat! Pembayaran berhasil. Akun Anda kini Premium.');
-        if (userPersona !== 'creator') {
-           selectPersona('creator');
-        }
-    }, 3500); // Increased delay
-}
-
-function updatePremiumUI() {
-    const isPremium = currentUser?.is_premium ?? false;
-    const premiumTags = document.querySelectorAll('.premium-tag, .premium-feature-badge');
-    const themeInputContainer = document.getElementById('themeInputContainer');
-    
-    if (isPremium) {
-        premiumTags.forEach(tag => (tag as HTMLElement).style.display = 'none');
-        if (themeInputContainer) themeInputContainer.classList.remove('disabled-feature');
-        themeInput.disabled = false;
-        upgradeButtonPricing.textContent = "Anda Sudah Premium";
-        upgradeButtonPricing.disabled = true;
-        historyNavButton.classList.remove('hidden'); // Show history for premium
-        mobileHistoryNavButton.classList.remove('hidden'); // Show mobile history for premium
-    } else {
-        premiumTags.forEach(tag => (tag as HTMLElement).style.display = 'inline-block');
-        // The input is for context for all users, so we don't disable it.
-        // The backend will decide if a background is generated.
-        if (themeInputContainer) themeInputContainer.classList.remove('disabled-feature');
-        themeInput.disabled = false;
-        upgradeButtonPricing.textContent = "Upgrade ke Premium";
-        upgradeButtonPricing.disabled = false;
-        historyNavButton.classList.add('hidden'); // Hide history for non-premium
-        mobileHistoryNavButton.classList.add('hidden'); // Hide mobile history for non-premium
-    }
-}
-
-
-// --- Event Handlers ---
-
+/**
+ * Handles persona selection and transitions to the main app interface.
+ * @param {string} persona - The selected persona ('creator' or 'casual').
+ */
 function selectPersona(persona: 'creator' | 'casual') {
-    if (persona === 'creator' && !currentUser?.is_premium) {
+    if (persona === 'creator' && (!currentUser || !currentUser.is_premium)) {
         openSubscriptionModal();
         return;
     }
-    
     userPersona = persona;
-    personaButtons.forEach(button => {
-        button.classList.toggle('selected', button.dataset.persona === persona);
+    gsap.to(personaContainer, {
+        opacity: 0,
+        duration: 0.4,
+        onComplete: () => {
+            personaContainer.classList.add('hidden');
+            mainAppInterface.classList.remove('hidden');
+            gsap.fromTo(mainAppInterface, { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.5 });
+        }
     });
-
-    personaContainer.classList.add('hidden');
-    mainAppInterface.classList.remove('hidden');
-    mainAppInterface.classList.add('fade-in');
 }
 
+/**
+ * Handles file selection, reads the image, and displays a preview.
+ */
 function handleFileSelect(event: Event) {
     const target = event.target as HTMLInputElement;
     const file = target.files?.[0];
     if (file) {
         const reader = new FileReader();
         reader.onload = (e) => {
-            const result = e.target?.result;
-            if (typeof result === 'string') {
-                imagePreview.src = result;
-                if (result.includes(',')) {
-                    base64ImageData = result; // Store the full data URL
-                    uploadContainer.classList.add('hidden');
-                    imagePreviewContainer.classList.remove('hidden');
-                    resultsContainer.classList.add('hidden');
-                    errorContainer.classList.add('hidden');
-                } else {
-                    showError("Format file gambar tidak didukung.");
-                    fileInput.value = '';
-                }
-            } else {
-                showError("Gagal membaca file gambar.");
-                fileInput.value = '';
-            }
+            base64ImageData = e.target?.result as string;
+            imagePreview.src = base64ImageData;
+            uploadContainer.classList.add('hidden');
+            imagePreviewContainer.classList.remove('hidden');
+            analyzeButton.disabled = false;
         };
         reader.readAsDataURL(file);
     }
 }
 
-async function handleAnalyzeClick() {
-    if (!currentUser) {
-        showError("Anda harus login untuk menganalisis foto.");
-        openLoginModal();
-        return;
-    }
-    if (!base64ImageData || !userPersona) {
-        showError("Pastikan Anda sudah memilih persona dan mengunggah gambar.");
-        return;
-    }
-
-    // Abort previous request if any and create a new controller for the new request
-    if (analysisAbortController) {
-        analysisAbortController.abort();
-    }
+/**
+ * Starts the AI analysis process.
+ */
+async function analyzeImage() {
+    if (!base64ImageData || !userPersona) return;
     analysisAbortController = new AbortController();
-
-    imagePreviewContainer.classList.add('hidden');
-    loaderContainer.classList.remove('hidden');
-    resultsContainer.classList.add('hidden');
-    errorContainer.classList.add('hidden');
-
-    const theme = themeInput.value.trim();
-    loaderText.textContent = (theme && currentUser.is_premium) ? "MEMBUAT BACKGROUND & MENGANALISIS..." : "MENGANALISIS KONTEN...";
-
+    
+    showLoader(true, 'Menganalisis fotomu...');
+    
     try {
-        const payload = { base64ImageData, persona: userPersona, theme };
-
         const response = await fetchWithAuth(`${API_BASE_URL}/api/analyze`, {
             method: 'POST',
-            body: JSON.stringify(payload),
-            signal: analysisAbortController.signal // Pass the signal to the fetch request
+            body: JSON.stringify({
+                base64ImageData,
+                persona: userPersona,
+                theme: themeInput.value || null
+            }),
+            signal: analysisAbortController.signal,
         });
 
+        const data = await response.json();
+
         if (!response.ok) {
-            let errorToThrow: Error;
-            const contentType = response.headers.get("content-type");
-
-            if (contentType && contentType.includes("application/json")) {
-                const errorData = await response.json().catch(() => ({ error: "Gagal mem-parsing respons error dari server." }));
-                if (response.status === 403 && errorData.quotaExceeded) {
-                    openSubscriptionModal();
-                    goBackToPreview();
-                    return; // Exit function, modal is shown.
-                }
-                errorToThrow = new Error(errorData.error || `Terjadi kesalahan dengan status ${response.status}`);
+            if(data.quotaExceeded) {
+                openSubscriptionModal();
+                showLoader(false);
             } else {
-                if (response.status === 413) {
-                    errorToThrow = new Error("Ukuran file gambar terlalu besar. Coba unggah gambar di bawah 10MB.");
-                } else {
-                    errorToThrow = new Error(`Terjadi kesalahan pada server (Status: ${response.status}). Coba lagi nanti.`);
-                }
+                throw new Error(data.error || 'Terjadi kesalahan saat analisis.');
             }
-            throw errorToThrow;
+        } else {
+            if (currentUser?.is_premium) {
+                saveToHistory(base64ImageData, data.analysis, userPersona);
+            }
+            renderResults(data.analysis);
+            await checkLoginStatus(); // Re-check to get updated credits
         }
-
-        const { analysis }: { analysis: IdeaResult[] } = await response.json();
-
-        // Refresh user data to show updated credit count immediately
-        await checkAuthStatus();
-
-        if (!analysis || (Array.isArray(analysis) && analysis.length === 0)) {
-            throw new Error("Respons AI tidak valid atau kosong. Coba lagi.");
-        }
-
-        displayResults(analysis);
-        await addToHistory(base64ImageData, analysis, userPersona);
-        loaderContainer.classList.add('hidden');
-        resultsContainer.classList.remove('hidden');
-
     } catch (error: any) {
-        if (error.name === 'AbortError') {
-            console.log('Analysis fetch aborted by user.');
-            // goBackToPreview() has already handled the UI, so we just exit.
-            return;
+        if (error.name !== 'AbortError') {
+             console.error("Analysis failed:", error);
+             showError(error.message);
+             showLoader(false);
         }
-        console.error("Error during analysis:", error);
-        showError(error.message || "Terjadi kesalahan saat menghubungi server AI.");
-        goBackToPreview();
-    } finally {
-        // Clear the controller once the operation is complete (success, error, or abort)
-        analysisAbortController = null;
     }
 }
 
-// --- UI Rendering & Audio ---
-
-function copyToClipboard(textToCopy: string, buttonElement: HTMLButtonElement) {
-    navigator.clipboard.writeText(textToCopy).then(() => {
-        const originalContent = buttonElement.innerHTML;
-        buttonElement.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>`;
-        setTimeout(() => {
-            buttonElement.innerHTML = originalContent;
-        }, 2000);
-    }).catch(err => {
-        console.error('Gagal menyalin teks: ', err);
-    });
-}
-window.copyToClipboard = copyToClipboard;
-
-
 /**
- * Membuat string HTML untuk satu kartu/slide.
+ * Renders the analysis results into a slider.
+ * @param {IdeaResult[]} results - An array of content ideas.
  */
-function createSlideHTML(idea: IdeaResult): string {
-    const { mood, caption, hashtags, song } = idea;
-    const combinedHashtags = hashtags.map(h => `#${h}`).join(' ');
+function renderResults(results: IdeaResult[]) {
+    showLoader(false);
+    mainAppInterface.classList.add('hidden');
+    resultsContainer.classList.remove('hidden');
     
-    const albumArt = song.album_art_url || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23475569'%3E%3Cpath d='M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z'/%3E%3C/svg%3E";
-    const artistImage = song.artist_image_url || "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239CA3AF'%3E%3Cpath d='M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z'/%3E%3C/svg%3E";
-
-    let musicPlayerHTML = '';
-
-    const playerContent = `
-        <img src="${albumArt}" alt="Album Art" class="w-14 h-14 rounded-md object-cover flex-shrink-0" crossOrigin="anonymous">
-        <div class="flex-grow text-left overflow-hidden">
-            <p class="font-bold text-white truncate leading-tight">${song.title}</p>
-            <div class="flex items-center space-x-2 mt-1">
-                <img src="${artistImage}" alt="${song.artist}" class="w-5 h-5 rounded-full object-cover">
-                <p class="text-sm text-slate-400 truncate">${song.artist}</p>
-            </div>
-        </div>
-    `;
-
-    // JIKA ADA URL CUPLIKAN, BUAT TOMBOL PLAY/PAUSE YANG BISA DIPUTAR
-    if (song.preview_url) {
-        musicPlayerHTML = `
-            <div class="mt-4 p-3 rounded-lg bg-black bg-opacity-20 flex items-center space-x-3">
-                ${playerContent}
-                <audio class="audio-preview hidden" src="${song.preview_url}" preload="none"></audio>
-                <button class="play-pause-btn text-white bg-green-500 rounded-full w-12 h-12 flex items-center justify-center flex-shrink-0 hover:bg-green-600 transition">
-                    ${playIconSVG}
-                    ${pauseIconSVG}
-                </button>
-            </div>
-        `;
-    } else { // JIKA TIDAK ADA URL CUPLIKAN, BUAT TOMBOL ABU-ABU YANG MENGARAH KE SPOTIFY
-        const searchQuery = encodeURIComponent(`${song.title} ${song.artist}`);
-        const spotifyLink = `https://open.spotify.com/search/${searchQuery}`;
-        musicPlayerHTML = `
-            <div class="mt-4 p-3 rounded-lg bg-black bg-opacity-20 flex items-center space-x-3">
-                ${playerContent}
-                <a href="${spotifyLink}" target="_blank" title="Pratinjau tidak tersedia. Cari di Spotify." class="play-pause-btn text-white bg-slate-600 rounded-full w-12 h-12 flex items-center justify-center flex-shrink-0 hover:bg-slate-700 transition no-underline">
-                    ${playIconSVG}
-                </a>
-            </div>
-        `;
-    }
+    const sliderWrapper = resultsContainer.querySelector('.slider-wrapper') as HTMLElement;
+    sliderWrapper.innerHTML = ''; // Clear previous results
     
-    const combinedTextToCopy = `"${caption}"\n\n${combinedHashtags}`;
-
-    return `
-        <div class="slide text-left w-full flex-shrink-0">
-            <div class="flex justify-between items-center">
-                <span class="mood-badge">${mood}</span>
-                 <button onclick='copyToClipboard(${JSON.stringify(combinedTextToCopy)}, this)' class="btn-copy">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
-                </button>
-            </div>
-            <p class="caption-text">“${caption}”</p>
-            <p class="hashtags">${combinedHashtags}</p>
-            ${musicPlayerHTML}
-        </div>
-    `;
-}
-
-/**
- * Menambahkan event listener ke semua tombol play/pause yang baru dibuat.
- */
-function setupAudioPlayers() {
-    const allPlayButtons = document.querySelectorAll('.play-pause-btn');
-    let activeAudioTimeout: number | null = null; // Variabel untuk menyimpan timer
-
-    allPlayButtons.forEach(button => {
-        // Hanya tambahkan listener ke tombol <button> yang bisa diputar, bukan link <a>
-        if (button.tagName.toLowerCase() !== 'button') return;
-
-        const slide = button.closest('.slide');
-        const audio = slide?.querySelector<HTMLAudioElement>('.audio-preview');
-        const playIcon = button.querySelector('.play-icon');
-        const pauseIcon = button.querySelector('.pause-icon');
-
-        if (audio && playIcon && pauseIcon) {
-            button.addEventListener('click', (event) => {
-                event.stopPropagation();
-                
-                // Hentikan semua audio lain dan reset ikonnya
-                document.querySelectorAll<HTMLAudioElement>('.audio-preview').forEach(otherAudio => {
-                    if (otherAudio !== audio) {
-                        otherAudio.pause();
-                        const otherButton = otherAudio.closest('.slide')?.querySelector('.play-pause-btn');
-                        if (otherButton) {
-                            otherButton.querySelector('.play-icon')?.classList.remove('hidden');
-                            otherButton.querySelector('.pause-icon')?.classList.add('hidden');
-                        }
-                    }
-                });
-
-                // Hapus timer yang sedang berjalan (jika ada)
-                if (activeAudioTimeout) {
-                    clearTimeout(activeAudioTimeout);
-                    activeAudioTimeout = null;
-                }
-
-                // Putar atau jeda audio yang ini
-                if (audio.paused) {
-                    // Atur titik mulai sebelum memutar
-                    audio.currentTime = PREVIEW_START_TIME;
-                    audio.play().catch(e => console.error("Error playing audio:", e));
-                    
-                    playIcon.classList.add('hidden');
-                    pauseIcon.classList.remove('hidden');
-                    
-                    // Setel timer untuk berhenti setelah 15 detik
-                    activeAudioTimeout = window.setTimeout(() => {
-                        audio.pause();
-                    }, PREVIEW_DURATION * 1000);
-
-                } else {
-                    audio.pause();
-                }
-            });
-
-            // Listener untuk saat audio di-pause (baik oleh user maupun otomatis)
-            audio.addEventListener('pause', () => {
-                playIcon.classList.remove('hidden');
-                pauseIcon.classList.add('hidden');
-                // Hapus timer jika lagu dihentikan secara manual
-                if (activeAudioTimeout) {
-                    clearTimeout(activeAudioTimeout);
-                    activeAudioTimeout = null;
-                }
-            });
-
-            // Listener untuk saat audio selesai secara alami (bukan karena timeout)
-            audio.addEventListener('ended', () => {
-                playIcon.classList.remove('hidden');
-                pauseIcon.classList.add('hidden');
-                if (activeAudioTimeout) {
-                    clearTimeout(activeAudioTimeout);
-                    activeAudioTimeout = null;
-                }
-            });
-        }
+    results.forEach((idea, index) => {
+        const slide = createIdeaCard(idea, index);
+        sliderWrapper.appendChild(slide);
     });
-}
 
-
-/**
- * Mengatur fungsionalitas tombol next/prev pada slider.
- */
-function setupSlider(slideCount: number, sliderWrapper: HTMLElement, prevButton: HTMLButtonElement, nextButton: HTMLButtonElement) {
+    // Initialize slider
+    const slides = sliderWrapper.querySelectorAll('.slide');
+    const prevButton = document.getElementById('prev-slide') as HTMLButtonElement;
+    const nextButton = document.getElementById('next-slide') as HTMLButtonElement;
     let currentIndex = 0;
 
-    function updateSlider() {
-        sliderWrapper.style.transform = `translateX(-${currentIndex * 100}%)`;
+    function goToSlide(index: number) {
+        if (index < 0 || index >= slides.length) return;
+        sliderWrapper.style.transform = `translateX(-${index * 100}%)`;
+        currentIndex = index;
     }
 
-    function stopAllAudio() {
-        sliderWrapper.querySelectorAll<HTMLAudioElement>('.audio-preview').forEach(audio => {
-            if (!audio.paused) {
-                 audio.pause();
-            }
-        });
-    }
-
-    prevButton.onclick = () => {
-        stopAllAudio();
-        currentIndex = (currentIndex > 0) ? currentIndex - 1 : slideCount - 1;
-        updateSlider();
-    };
-
-    nextButton.onclick = () => {
-        stopAllAudio();
-        currentIndex = (currentIndex < slideCount - 1) ? currentIndex + 1 : 0;
-        updateSlider();
-    };
-
-    // Initialize
-    updateSlider();
+    prevButton.onclick = () => goToSlide(currentIndex - 1);
+    nextButton.onclick = () => goToSlide(currentIndex + 1);
 }
 
 /**
- * Fungsi utama untuk menampilkan semua hasil dari AI ke dalam slider.
+ * Creates a single result card element.
+ * @param {IdeaResult} idea - The content idea object.
+ * @param {number} index - The index of the idea.
+ * @returns {HTMLElement} The created slide element.
  */
-function displayResults(results: IdeaResult[]) {
-    const sliderWrapper = resultsContainer.querySelector('.slider-wrapper') as HTMLElement;
-    const prevButton = resultsContainer.querySelector('#prev-slide') as HTMLButtonElement;
-    const nextButton = resultsContainer.querySelector('#next-slide') as HTMLButtonElement;
-    const resultsTitle = resultsContainer.querySelector('h3') as HTMLHeadingElement;
+function createIdeaCard(idea: IdeaResult, index: number): HTMLElement {
+    const slide = document.createElement('div');
+    slide.className = 'slide fade-in';
+    slide.style.animationDelay = `${index * 100}ms`;
 
-    if (!results || results.length === 0) {
-        showError("AI tidak dapat memberikan hasil untuk gambar ini. Coba dengan gambar lain.");
-        goBackToPreview();
-        return;
-    }
+    const hashtags = idea.hashtags.map(h => `#${h}`).join(' ');
+
+    slide.innerHTML = `
+        <div class="flex flex-col h-full">
+            <div class="flex justify-between items-center mb-4">
+                <span class="mood-badge">${idea.mood}</span>
+            </div>
+            <div class="flex-grow flex items-center">
+                 <p class="caption-text">${idea.caption}</p>
+            </div>
+             <p class="hashtags text-sm mb-4">${hashtags}</p>
+            <div class="mt-auto pt-4 border-t border-slate-700/50 flex items-center justify-between gap-4">
+                <div class="flex items-center gap-4 overflow-hidden">
+                    <button class="play-pause-btn">
+                        ${playIconSVG}
+                        ${pauseIconSVG}
+                    </button>
+                    <div class="min-w-0">
+                        <p class="font-bold text-white truncate">${idea.song.title}</p>
+                        <p class="text-sm text-text-muted truncate">${idea.song.artist}</p>
+                    </div>
+                </div>
+                <button class="btn-copy">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                </button>
+            </div>
+        </div>
+    `;
+
+    const copyButton = slide.querySelector('.btn-copy') as HTMLButtonElement;
+    copyButton.addEventListener('click', () => {
+        const textToCopy = `${idea.caption}\n\n${hashtags}\n\nSong suggestion: ${idea.song.title} by ${idea.song.artist}`;
+        window.copyToClipboard(textToCopy, copyButton);
+    });
+
+    const playPauseBtn = slide.querySelector('.play-pause-btn') as HTMLButtonElement;
+    playPauseBtn.addEventListener('click', () => toggleSongPlayback(idea.song, playPauseBtn));
     
-    sliderWrapper.innerHTML = results.map(createSlideHTML).join('');
-    
-    if (resultsTitle) {
-        resultsTitle.textContent = `${results.length} Ide Konten Untukmu`;
+    if(!idea.song.uri && !idea.song.preview_url) {
+        playPauseBtn.disabled = true;
+        playPauseBtn.style.opacity = '0.5';
+        playPauseBtn.style.cursor = 'not-allowed';
     }
 
-    resultsContainer.classList.remove('hidden');
+    return slide;
+}
+
+/**
+ * Resets the application state to the initial persona selection screen.
+ */
+function resetApp() {
+    resetAllPlayButtons();
+    if(currentHtmlAudio) currentHtmlAudio.pause();
+    if(spotifyPlayer) spotifyPlayer.pause();
+
+    base64ImageData = null;
+    userPersona = null;
+    analysisAbortController?.abort();
+
+    resultsContainer.classList.add('hidden');
+    mainAppInterface.classList.add('hidden');
+    imagePreviewContainer.classList.add('hidden');
+    uploadContainer.classList.remove('hidden');
     loaderContainer.classList.add('hidden');
+    personaContainer.classList.remove('hidden');
     
-    setupSlider(results.length, sliderWrapper, prevButton, nextButton);
-    setupAudioPlayers();
+    fileInput.value = '';
+    themeInput.value = '';
+
+    gsap.fromTo(personaContainer, { opacity: 0 }, { opacity: 1, duration: 0.5 });
+    
+    document.querySelectorAll('.btn-persona.selected').forEach(btn => btn.classList.remove('selected'));
 }
 
-// --- History Management ---
+/**
+ * Shows or hides the main loader.
+ * @param {boolean} show - Whether to show the loader.
+ * @param {string} [text] - Optional text to display.
+ */
+function showLoader(show: boolean, text: string = 'MENGANALISIS...') {
+    if (show) {
+        mainAppInterface.classList.add('hidden');
+        loaderContainer.classList.remove('hidden');
+        loaderText.textContent = text;
+    } else {
+        loaderContainer.classList.add('hidden');
+    }
+}
 
-async function addToHistory(imageDataUrl: string, resultData: IdeaResult[], persona: 'creator' | 'casual') {
-    if (!currentUser?.is_premium) return;
-    
-    try {
-        const thumbnailDataUrl = await createThumbnail(imageDataUrl, 200);
-        const newHistoryItem = {
-            thumbnailDataUrl,
-            resultData,
-            persona,
-            // The date is now set by the server, so we don't need to send it.
-        };
-        const response = await fetchWithAuth(`${API_BASE_URL}/api/history`, {
-            method: 'POST',
-            body: JSON.stringify(newHistoryItem)
-        });
-
-        if (!response.ok) {
-            const errorData = await response.json();
-            console.error("Gagal menyimpan riwayat:", errorData.error);
+/**
+ * Displays an error message to the user.
+ * @param {string} message - The error message to display.
+ * @param {'error' | 'success'} type - The type of message.
+ */
+function showError(message: string, type: 'error' | 'success' = 'error') {
+    const el = isLoginMode ? loginModalError : (type === 'error' ? forgotPasswordModalError : forgotPasswordModalSuccess);
+    if(loginModal.style.display !== 'none' && authView.style.display !== 'none') {
+        loginModalError.textContent = message;
+        loginModalError.classList.remove('hidden');
+        if (type === 'success') {
+            loginModalError.classList.replace('bg-red-900/50', 'bg-green-900/50');
+            loginModalError.classList.replace('border-red-500', 'border-green-500');
+            loginModalError.classList.replace('text-red-300', 'text-green-300');
+        } else {
+            loginModalError.classList.replace('bg-green-900/50', 'bg-red-900/50');
+            loginModalError.classList.replace('border-green-500', 'border-red-500');
+            loginModalError.classList.replace('text-green-300', 'text-red-300');
         }
-
-    } catch (error) {
-        console.error("Gagal mengirim data riwayat:", error);
+    } else {
+        errorMessage.textContent = message;
+        errorContainer.classList.remove('hidden');
+        setTimeout(() => errorContainer.classList.add('hidden'), 5000);
     }
 }
 
-async function renderHistoryPage() {
-    if (!currentUser) {
-        historyEmptyState.classList.remove('hidden');
-        historyGrid.classList.add('hidden');
-        historyEmptyState.textContent = "Silakan login untuk melihat riwayat Anda.";
-        return;
+/**
+ * Resets the visual state of all play/pause buttons to 'paused'.
+ */
+function resetAllPlayButtons() {
+    document.querySelectorAll('.play-pause-btn').forEach(btn => {
+        updatePlayButtonState(btn as HTMLButtonElement, false);
+    });
+    currentPlayingUri = null;
+    if (activePlaybackTimeout) {
+        clearTimeout(activePlaybackTimeout);
+        activePlaybackTimeout = null;
     }
-    if (!currentUser.is_premium) {
-        historyEmptyState.classList.remove('hidden');
-        historyGrid.classList.add('hidden');
-        historyEmptyState.innerHTML = `Fitur Riwayat hanya untuk pengguna Premium. <a href="#" id="upgradeFromHistory" class="text-accent font-bold hover:underline">Upgrade sekarang</a>.`;
-        document.getElementById('upgradeFromHistory')?.addEventListener('click', (e) => {
-            e.preventDefault();
-            openSubscriptionModal();
-        });
-        return;
-    }
+}
 
+/**
+ * Updates a play/pause button's icons and state class.
+ * @param {HTMLButtonElement} buttonEl - The button to update.
+ * @param {boolean} isPlaying - The new state.
+ */
+function updatePlayButtonState(buttonEl: HTMLButtonElement, isPlaying: boolean) {
+    const playIcon = buttonEl.querySelector('.play-icon');
+    const pauseIcon = buttonEl.querySelector('.pause-icon');
+    if (isPlaying) {
+        playIcon?.classList.add('hidden');
+        pauseIcon?.classList.remove('hidden');
+        buttonEl.classList.add('playing');
+    } else {
+        playIcon?.classList.remove('hidden');
+        pauseIcon?.classList.add('hidden');
+        buttonEl.classList.remove('playing');
+    }
+}
+
+// --- Modals & Page Navigation ---
+
+function openLoginModal() {
+    loginModal.classList.remove('hidden');
+    switchAuthMode(true);
+    authView.classList.remove('hidden');
+    forgotPasswordView.classList.add('hidden');
+}
+function closeLoginModal() { loginModal.classList.add('hidden'); loginForm.reset(); forgotPasswordForm.reset(); }
+function openSubscriptionModal() { subscriptionModal.classList.remove('hidden'); }
+function closeSubscriptionModal() { subscriptionModal.classList.add('hidden'); }
+
+function showPage(pageId: string) {
+    document.querySelectorAll('.page-content').forEach(page => (page as HTMLElement).classList.add('hidden'));
+    
+    if (pageId === 'page-riwayat') {
+        fetchHistory();
+        pageRiwayat.classList.remove('hidden');
+        mainContentScrollContainer.classList.add('hidden');
+    } else {
+        mainContentScrollContainer.classList.remove('hidden');
+        const targetPage = document.getElementById(pageId.replace('page-', '')) as HTMLElement;
+        if(targetPage) {
+            targetPage.classList.remove('hidden');
+            // If it's the home page, ensure we start at the top
+            if (pageId === 'page-home') {
+                 mainContentScrollContainer.style.display = 'block';
+                 pageRiwayat.classList.add('hidden');
+                 const homeSection = document.getElementById('home');
+                 homeSection?.classList.remove('hidden');
+            }
+        }
+    }
+}
+
+// --- History Functions ---
+
+async function fetchHistory() {
+    if (!currentUser?.is_premium) {
+        showError("Riwayat hanya tersedia untuk pengguna Premium.");
+        return;
+    }
     try {
         const response = await fetchWithAuth(`${API_BASE_URL}/api/history`);
-        if (!response.ok) throw new Error('Gagal memuat riwayat');
-        const history: HistoryItem[] = await response.json();
+        const history = await response.json();
+        
+        if (!response.ok) throw new Error(history.error || "Gagal memuat riwayat.");
 
         historyGrid.innerHTML = '';
         if (history.length === 0) {
             historyEmptyState.classList.remove('hidden');
             historyGrid.classList.add('hidden');
-            historyEmptyState.textContent = "Anda belum memiliki riwayat. Mulai analisis foto pertama Anda!";
         } else {
             historyEmptyState.classList.add('hidden');
             historyGrid.classList.remove('hidden');
-            history.forEach(item => {
-                const firstResult = item.resultData[0];
-                const caption = firstResult.caption || 'Hasil Analisis';
-
-                const card = document.createElement('div');
-                card.className = 'futuristic-card rounded-2xl overflow-hidden cursor-pointer text-left flex flex-col';
-                card.innerHTML = `
-                    <img src="${item.thumbnailDataUrl}" class="w-full h-40 object-cover" alt="Analisis thumbnail">
-                    <div class="p-4 flex flex-col flex-grow">
-                        <p class="text-xs text-text-muted">${item.date}</p>
-                        <h4 class="font-bold text-text-primary truncate capitalize">${firstResult.mood || item.persona}</h4>
-                        <p class="text-sm text-text-muted flex-grow truncate">"${caption}"</p>
-                    </div>
-                `;
-                card.addEventListener('click', () => showHistoryDetail(item));
-                historyGrid.appendChild(card);
-            });
+            (history as HistoryItem[]).forEach(createHistoryCard);
         }
-    } catch(error: any) {
-        historyEmptyState.textContent = error.message || "Gagal memuat riwayat. Coba lagi nanti.";
-        historyEmptyState.classList.remove('hidden');
-        historyGrid.classList.add('hidden');
+    } catch (error: any) {
+        showError(error.message);
     }
+}
+
+function createHistoryCard(item: HistoryItem) {
+    const card = document.createElement('div');
+    card.className = 'futuristic-card p-3 rounded-xl cursor-pointer';
+    card.innerHTML = `
+        <img src="${item.thumbnailDataUrl}" alt="History thumbnail" class="rounded-lg w-full h-48 object-cover mb-3">
+        <p class="text-sm font-semibold text-text-primary">Analisis ${item.persona}</p>
+        <p class="text-xs text-text-muted">${item.date}</p>
+    `;
+    card.addEventListener('click', () => showHistoryDetail(item));
+    historyGrid.appendChild(card);
 }
 
 function showHistoryDetail(item: HistoryItem) {
-    historyDetailContent.innerHTML = `
-        <div class="slider-container relative w-full mx-auto">
-            <div class="slider-wrapper flex transition-transform duration-500 ease-in-out">
-                ${item.resultData.map(createSlideHTML).join('')}
+    historyDetailContent.innerHTML = ''; // Clear previous content
+
+    const contentWrapper = document.createElement('div');
+    contentWrapper.innerHTML = `
+        <h2 class="text-2xl font-bold text-white mb-2">Detail Riwayat</h2>
+        <p class="text-text-muted mb-4">Analisis <span class="font-semibold text-accent">${item.persona}</span> pada tanggal ${item.date}</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+                <h3 class="font-bold text-lg mb-2">Foto Asli</h3>
+                <img src="${item.thumbnailDataUrl}" class="rounded-lg w-full object-cover">
             </div>
-            <button class="slider-nav left-0 prev-slide-history">&lt;</button>
-            <button class="slider-nav right-0 next-slide-history">&gt;</button>
+            <div>
+                <h3 class="font-bold text-lg mb-2">Hasil Analisis</h3>
+                <div class="space-y-4">
+                    ${item.resultData.map(idea => `
+                        <div class="p-3 bg-slate-900/50 rounded-lg border border-slate-700">
+                            <p class="font-semibold text-white">"${idea.caption}"</p>
+                            <p class="text-sm text-text-muted mt-1">${idea.hashtags.map(h => `#${h}`).join(' ')}</p>
+                            <p class="text-sm text-accent-secondary mt-1">🎵 ${idea.song.title} - ${idea.song.artist}</p>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
         </div>
     `;
-
-    const sliderWrapper = historyDetailContent.querySelector('.slider-wrapper') as HTMLElement;
-    const prevButton = historyDetailContent.querySelector('.prev-slide-history') as HTMLButtonElement;
-    const nextButton = historyDetailContent.querySelector('.next-slide-history') as HTMLButtonElement;
-
-    if (sliderWrapper && prevButton && nextButton) {
-        setupSlider(item.resultData.length, sliderWrapper, prevButton, nextButton);
-        setupAudioPlayers();
-    }
-    
+    historyDetailContent.appendChild(contentWrapper);
     historyDetailModal.classList.remove('hidden');
 }
 
-function closeHistoryDetailModal() {
-    historyDetailModal.classList.add('hidden');
-    historyDetailContent.innerHTML = ''; // Clean up to stop audio
+async function saveToHistory(thumbnailDataUrl: string, resultData: IdeaResult[], persona: 'creator' | 'casual') {
+    try {
+        await fetchWithAuth(`${API_BASE_URL}/api/history`, {
+            method: 'POST',
+            body: JSON.stringify({ thumbnailDataUrl, resultData, persona })
+        });
+    } catch (error) {
+        console.warn("Could not save to history:", error);
+    }
 }
 
-function createThumbnail(dataUrl: string, maxWidth: number): Promise<string> {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => {
-            const canvas = document.createElement('canvas');
-            const scale = maxWidth / img.width;
-            canvas.width = maxWidth;
-            canvas.height = img.height * scale;
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-                resolve(canvas.toDataURL('image/jpeg', 0.8));
-            } else {
-                reject(new Error('Could not get canvas context'));
-            }
-        };
-        img.onerror = () => reject(new Error('Could not load image for thumbnail creation'));
-        img.src = dataUrl;
+
+// --- Utility Functions ---
+
+window.copyToClipboard = (text: string, button: HTMLButtonElement) => {
+    navigator.clipboard.writeText(text).then(() => {
+        const originalContent = button.innerHTML;
+        button.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>`;
+        setTimeout(() => {
+            button.innerHTML = originalContent;
+        }, 1500);
+    }, (err) => {
+        console.error('Could not copy text: ', err);
     });
-}
-
-/**
- * Handles all navigation clicks (desktop and mobile) to scroll smoothly
- * or switch between the main view and history view.
- * @param event The click event.
- * @param isMobile Whether the click is from the mobile menu.
- */
-function handleNavigation(event: Event, isMobile: boolean = false) {
-    event.preventDefault();
-    const link = event.currentTarget as HTMLAnchorElement;
-    const pageId = link.dataset.page;
-    const anchor = link.getAttribute('href');
-
-    if (isMobile) {
-        closeMobileMenu();
-    }
-
-    if (pageId) {
-        // It's a full-page switch, like for Riwayat or back to Home.
-        showPage(pageId);
-    } else if (anchor && anchor.startsWith('#')) {
-        // It's an anchor scroll link.
-        // Special case for reset password links
-        const urlParams = new URLSearchParams(window.location.search);
-        if (urlParams.has('token')) {
-             window.location.href = window.location.pathname + anchor;
-             return;
-        }
-
-        const targetElement = document.querySelector(anchor);
-
-        // Ensure the main scroll container is visible before trying to scroll.
-        // This is crucial for when we are on the history page.
-        if (mainContentScrollContainer.classList.contains('hidden')) {
-            showPage('page-home'); // This switches to the main content view
-             // We need to wait a moment for the DOM to update before scrolling.
-            setTimeout(() => {
-                targetElement?.scrollIntoView({ behavior: 'smooth' });
-            }, 150);
-        } else {
-             if (targetElement) {
-                targetElement.scrollIntoView({ behavior: 'smooth' });
-            }
-        }
-    }
-}
+};
 
 
-// --- Animation & Interaction Setup ---
-function setupAnimations() {
+// --- GSAP Animations ---
+function initAnimations() {
     gsap.registerPlugin(ScrollTrigger);
 
-    // --- GSAP Defaults for cleaner code ---
-    gsap.defaults({
-        duration: 0.8,
-        ease: "power3.out",
-    });
-
-    // --- Initial Load Animations ---
-    // Using a timeline for better control and sequencing
-    const tl = gsap.timeline({ defaults: { opacity: 0, y: 20 } });
-    tl.from(".hero-title", { delay: 0.2, duration: 1 })
-      .from(".hero-description", {}, "-=0.8")
-      .from(".social-proof-container", {}, "-=0.8")
-      .from(".app-card-container", {}, "-=0.8");
-
-    // --- Scroll-triggered Animations for sections ---
-    const sections = document.querySelectorAll('#about, #harga');
-    sections.forEach(section => {
-        const sectionTitle = section.querySelector('.section-title');
-        const featureCards = section.querySelectorAll('.feature-card');
-
-        // Animate section title
-        if (sectionTitle) {
-            gsap.from(sectionTitle, {
-                scrollTrigger: {
-                    trigger: section,
-                    start: "top 80%", // Trigger when section top hits 80% from viewport top
-                    toggleActions: "play none none none", // Play once on enter
-                },
-                opacity: 0,
-                y: 30,
-            });
-        }
-        
-        // Animate feature cards
-        if (featureCards.length > 0) {
-            gsap.from(featureCards, {
-                scrollTrigger: {
-                    trigger: section,
-                    start: "top 70%", // Trigger a bit later for cards
-                    toggleActions: "play none none none",
-                },
-                opacity: 0,
-                y: 30,
-                stagger: 0.15,
-            });
-        }
-    });
-}
-
-
-// --- Initialization ---
-async function init() {
-     // --- Logo Animation Setup ---
-    const logoTextElement = document.getElementById('logo-text');
-    if (logoTextElement) {
-        const text = logoTextElement.textContent || "";
-        logoTextElement.innerHTML = '';
-        text.split('').forEach((letter, index) => {
+    // Staggered logo animation
+    const logoText = document.getElementById('logo-text');
+    if(logoText) {
+        const letters = logoText.textContent!.split('');
+        logoText.textContent = '';
+        letters.forEach(letter => {
             const span = document.createElement('span');
+            span.textContent = letter;
             span.className = 'logo-letter';
-            span.textContent = letter === ' ' ? '\u00A0' : letter;
-            span.style.animationDelay = `${index * 0.05}s`;
-            logoTextElement.appendChild(span);
+            logoText.appendChild(span);
+        });
+
+        gsap.to('.logo-letter', {
+            opacity: 1,
+            y: 0,
+            duration: 0.5,
+            stagger: 0.05,
+            ease: 'power2.out'
         });
     }
 
-    // Check for reset password token in URL
-    const urlParams = new URLSearchParams(window.location.search);
-    if (window.location.pathname.includes('reset-password') && urlParams.has('token')) {
-        passwordResetToken = urlParams.get('token');
-        history.replaceState(null, '', window.location.pathname.split('reset-password')[0]); // Clean URL
-        openResetPasswordModal();
-    }
-
-
-    // Fetch config and check auth status on load
-    await fetchConfig();
-    await checkAuthStatus();
-
-    // Set up navigation
-    navLinks.forEach(link => {
-        link.addEventListener('click', (event) => handleNavigation(event, false));
+    // Animate sections on scroll
+    document.querySelectorAll('.section-title, .hero-title, .hero-description, .feature-card, .app-card-container, .social-proof-container').forEach(el => {
+        gsap.from(el, {
+            scrollTrigger: {
+                trigger: el,
+                start: 'top 85%',
+                toggleActions: 'play none none none',
+            },
+            opacity: 0,
+            y: 50,
+            duration: 0.8,
+            ease: 'power3.out',
+        });
     });
-
-    // App logic event listeners
-    personaButtons.forEach(button => {
-        const persona = button.dataset.persona as 'creator' | 'casual';
-        if (persona) button.addEventListener('click', () => selectPersona(persona));
-    });
-
-    fileInput.addEventListener('change', handleFileSelect);
-    analyzeButton.addEventListener('click', handleAnalyzeClick);
-    resetButton.addEventListener('click', () => {
-         // When resetting, scroll the app card back into view if it's off-screen
-        const appCard = document.querySelector('.app-card-container');
-        if(appCard) {
-            appCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-        setTimeout(resetUI, 300);
-    });
-    
-    // Back button listeners
-    backFromLoaderButton.addEventListener('click', goBackToPreview);
-    backFromResultsButton.addEventListener('click', goBackToPreview);
-
-    // Auth listeners
-    loginNavButton.addEventListener('click', openLoginModal);
-    closeLoginModalButton.addEventListener('click', closeLoginModal);
-    loginForm.addEventListener('submit', handleAuthSubmit);
-    loginSwitchLink.addEventListener('click', (e) => {
-        e.preventDefault();
-        switchAuthMode();
-    });
-    userProfileButton.addEventListener('click', () => userDropdown.classList.toggle('hidden'));
-    logoutButton.addEventListener('click', handleLogout);
-
-    // Password Reset Listeners
-    forgotPasswordLink.addEventListener('click', (e) => {
-        e.preventDefault();
-        switchToForgotPasswordView();
-    });
-    backToLoginLink.addEventListener('click', (e) => {
-        e.preventDefault();
-        switchToAuthView();
-    });
-    forgotPasswordForm.addEventListener('submit', handleForgotPassword);
-    resetPasswordForm.addEventListener('submit', handleResetPassword);
-    closeResetPasswordModalButton.addEventListener('click', closeResetPasswordModal);
-
-    // Subscription modal listeners
-    closeModalButton.addEventListener('click', closeSubscriptionModal);
-    initiatePaymentButton.addEventListener('click', initiateMidtransPayment);
-    upgradeButtonPricing.addEventListener('click', openSubscriptionModal);
-
-    // History listeners
-    closeHistoryDetailModalButton.addEventListener('click', closeHistoryDetailModal);
-
-    // Mobile Menu listeners
-    mobileMenuButton.addEventListener('click', openMobileMenu);
-    closeMobileMenuButton.addEventListener('click', closeMobileMenu);
-
-    mobileNavLinks.forEach(link => {
-         link.addEventListener('click', (event) => handleNavigation(event, true));
-    });
-    
-    mobileLoginButton.addEventListener('click', () => {
-        openLoginModal();
-        closeMobileMenu();
-    });
-
-    mobileLogoutButton.addEventListener('click', () => {
-        handleLogout();
-        closeMobileMenu();
-    });
-
-
-    // Initial UI state
-    showPage('page-home');
-    resetUI();
-
-    // Setup animations and interactions
-    setupAnimations();
 }
 
-init();
+
+// --- Event Listeners ---
+
+document.addEventListener('DOMContentLoaded', () => {
+    getAppConfig();
+    checkLoginStatus();
+    initializeSpotifyIntegration();
+    initAnimations();
+
+    // Persona selection
+    personaButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            personaButtons.forEach(btn => btn.classList.remove('selected'));
+            button.classList.add('selected');
+            selectPersona(button.dataset.persona as 'creator' | 'casual');
+        });
+    });
+
+    // Main app buttons
+    fileInput.addEventListener('change', handleFileSelect);
+    analyzeButton.addEventListener('click', analyzeImage);
+    resetButton.addEventListener('click', resetApp);
+    backFromLoaderButton.addEventListener('click', () => {
+        analysisAbortController?.abort();
+        showLoader(false);
+        mainAppInterface.classList.remove('hidden');
+    });
+    backFromResultsButton.addEventListener('click', () => {
+        mainAppInterface.classList.remove('hidden');
+        resultsContainer.classList.add('hidden');
+        imagePreviewContainer.classList.remove('hidden');
+    });
+
+    // Auth buttons
+    loginNavButton.addEventListener('click', openLoginModal);
+    closeLoginModalButton.addEventListener('click', closeLoginModal);
+    loginForm.addEventListener('submit', handleAuth);
+    loginSwitchLink.addEventListener('click', (e) => { e.preventDefault(); switchAuthMode(!isLoginMode); });
+
+    // Profile dropdown
+    userProfileButton.addEventListener('click', () => userDropdown.classList.toggle('hidden'));
+    logoutButton.addEventListener('click', handleLogout);
+    
+    // Subscription modal
+    closeModalButton.addEventListener('click', closeSubscriptionModal);
+    upgradeButtonPricing.addEventListener('click', () => {
+        if (!currentUser) { openLoginModal(); return; }
+        openSubscriptionModal();
+    });
+    initiatePaymentButton.addEventListener('click', handlePayment);
+
+    // Page navigation
+    navLinks.forEach(link => {
+        link.addEventListener('click', (e) => {
+            e.preventDefault();
+            const pageId = link.dataset.page;
+            if (pageId) {
+                showPage(pageId);
+                // For single-page scrolling sections
+                if (['home', 'about', 'harga'].includes(pageId.replace('page-',''))) {
+                    mainContentScrollContainer.style.display = 'block';
+                    pageRiwayat.classList.add('hidden');
+                    const targetSection = document.getElementById(pageId.replace('page-',''));
+                    targetSection?.scrollIntoView({ behavior: 'smooth' });
+                }
+            }
+        });
+    });
+    historyNavButton.addEventListener('click', (e) => { e.preventDefault(); showPage('page-riwayat'); });
+
+    // Spotify connect button
+    connectSpotifyButton.addEventListener('click', () => {
+        window.location.href = '/api/spotify-login';
+    });
+    
+    // History modal
+    closeHistoryDetailModalButton.addEventListener('click', () => historyDetailModal.classList.add('hidden'));
+
+    // Reset password flow
+    forgotPasswordLink.addEventListener('click', (e) => { e.preventDefault(); authView.classList.add('hidden'); forgotPasswordView.classList.remove('hidden'); });
+    backToLoginLink.addEventListener('click', (e) => { e.preventDefault(); forgotPasswordView.classList.add('hidden'); authView.classList.remove('hidden'); });
+    forgotPasswordForm.addEventListener('submit', handleForgotPassword);
+    
+    // Handle password reset from URL token
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.has('token')) {
+        passwordResetToken = urlParams.get('token');
+        resetPasswordModal.classList.remove('hidden');
+        // Clean URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }
+    closeResetPasswordModalButton.addEventListener('click', () => resetPasswordModal.classList.add('hidden'));
+    resetPasswordForm.addEventListener('submit', handleResetPassword);
+
+    // Mobile Menu
+    mobileMenuButton.addEventListener('click', () => mobileMenu.classList.remove('hidden'));
+    closeMobileMenuButton.addEventListener('click', () => mobileMenu.classList.add('hidden'));
+    mobileNavLinks.forEach(link => link.addEventListener('click', () => mobileMenu.classList.add('hidden')));
+    mobileLoginButton.addEventListener('click', () => {
+        mobileMenu.classList.add('hidden');
+        openLoginModal();
+    });
+    mobileLogoutButton.addEventListener('click', () => {
+        mobileMenu.classList.add('hidden');
+        handleLogout();
+    });
+    mobileHistoryNavButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        mobileMenu.classList.add('hidden');
+        showPage('page-riwayat');
+    })
+});
+
+// --- Payments ---
+async function handlePayment() {
+    modalInfoView.classList.add('hidden');
+    modalProcessingView.classList.remove('hidden');
+    processingMessage.textContent = 'Membuat transaksi...';
+    try {
+        const response = await fetchWithAuth(`${API_BASE_URL}/api/create-transaction`, {
+            method: 'POST',
+            body: JSON.stringify({ amount: 10000 })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+
+        window.snap.pay(data.token, {
+            onSuccess: function(result: any){
+                console.log('Payment success:', result);
+                processingMessage.textContent = 'Pembayaran berhasil! Memperbarui akun...';
+                setTimeout(() => {
+                    closeSubscriptionModal();
+                    checkLoginStatus(); // Re-fetch user status
+                }, 2000);
+            },
+            onPending: function(result: any){
+                console.log('Payment pending:', result);
+                processingMessage.textContent = 'Menunggu pembayaran Anda...';
+            },
+            onError: function(result: any){
+                 console.error('Payment error:', result);
+                processingMessage.textContent = `Pembayaran gagal. Silakan coba lagi.`;
+                setTimeout(() => {
+                     modalProcessingView.classList.add('hidden');
+                     modalInfoView.classList.remove('hidden');
+                }, 3000);
+            },
+            onClose: function(){
+                if (modalProcessingView.style.display !== 'none' && processingMessage.textContent === 'Menunggu pembayaran Anda...') {
+                    console.log('customer closed the popup without finishing the payment');
+                    modalProcessingView.classList.add('hidden');
+                    modalInfoView.classList.remove('hidden');
+                }
+            }
+        });
+
+    } catch (error: any) {
+        processingMessage.textContent = `Error: ${error.message}`;
+        setTimeout(() => {
+            modalProcessingView.classList.add('hidden');
+            modalInfoView.classList.remove('hidden');
+        }, 3000);
+    }
+}
+
+
+// --- Password Reset Flow ---
+async function handleForgotPassword(event: Event) {
+    event.preventDefault();
+    forgotPasswordModalError.classList.add('hidden');
+    forgotPasswordModalSuccess.classList.add('hidden');
+    forgotPasswordSubmitButton.disabled = true;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/forgot-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: forgotPasswordEmail.value })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+        forgotPasswordModalSuccess.textContent = 'Link reset telah dikirim ke email Anda.';
+        forgotPasswordModalSuccess.classList.remove('hidden');
+    } catch(err: any) {
+        forgotPasswordModalError.textContent = err.message || 'Gagal mengirim email.';
+        forgotPasswordModalError.classList.remove('hidden');
+    } finally {
+        forgotPasswordSubmitButton.disabled = false;
+    }
+}
+
+async function handleResetPassword(event: Event) {
+    event.preventDefault();
+    resetPasswordModalError.classList.add('hidden');
+    
+    if (resetPasswordInput.value !== confirmPasswordInput.value) {
+        resetPasswordModalError.textContent = 'Password tidak cocok.';
+        resetPasswordModalError.classList.remove('hidden');
+        return;
+    }
+
+    resetPasswordSubmitButton.disabled = true;
+
+    try {
+        const response = await fetch(`${API_BASE_URL}/api/reset-password`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: passwordResetToken, password: resetPasswordInput.value })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error);
+
+        resetPasswordModal.classList.add('hidden');
+        openLoginModal();
+        showError(data.message, 'success');
+
+    } catch(err: any) {
+        resetPasswordModalError.textContent = err.message || 'Gagal mereset password.';
+        resetPasswordModalError.classList.remove('hidden');
+    } finally {
+        resetPasswordSubmitButton.disabled = false;
+    }
+}

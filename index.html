@@ -52,10 +52,18 @@
                         Login
                     </button>
                     <div id="userProfile" class="hidden relative">
-                        <button id="userProfileButton" class="flex items-center space-x-2">
-                            <span id="userEmail" class="font-medium text-text-primary"></span>
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-text-muted" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
-                        </button>
+                         <div class="flex items-center space-x-4">
+                            <button id="connectSpotifyButton" class="hidden btn-secondary btn-primary-small items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="text-green-400" viewBox="0 0 16 16">
+                                    <path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0m3.669 11.538a.498.498 0 0 1-.686.165c-1.879-1.147-4.243-1.407-7.028-.77a.499.499 0 0 1-.222-.973c3.048-.696 5.662-.397 7.77.892a.5.5 0 0 1 .166.686m.979-2.178a.624.624 0 0 1-.858.205c-2.15-1.321-5.428-1.704-7.972-.932a.625.625 0 0 1-.362-1.194c2.905-.881 6.517-.454 8.986 1.063a.624.624 0 0 1 .206.858m.084-2.268C10.154 5.56 5.9 5.419 3.438 6.166a.748.748 0 1 1-.434-1.437c2.766-.835 7.352-.639 9.609 1.079a.747.747 0 1 1-1.225.825"/>
+                                </svg>
+                                <span>Hubungkan Spotify</span>
+                            </button>
+                            <button id="userProfileButton" class="flex items-center space-x-2">
+                                <span id="userEmail" class="font-medium text-text-primary"></span>
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-text-muted" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" /></svg>
+                            </button>
+                        </div>
                         <div id="userDropdown" class="hidden absolute right-0 mt-2 w-48 bg-slate-800 rounded-md shadow-lg py-1 z-50 futuristic-card">
                             <a href="#" id="logoutButton" class="block px-4 py-2 text-sm text-text-muted hover:bg-slate-700">Logout</a>
                         </div>
@@ -228,6 +236,7 @@
                             <p class="text-4xl font-bold text-text-primary mb-4">Rp 10.000<span class="text-lg font-sans font-normal text-text-muted">/bulan</span></p>
                             <ul class="space-y-3 text-text-muted flex-grow mb-8">
                                 <li class="flex items-start"><span class="text-accent mr-2 mt-1 font-bold">✓</span><span><strong>Analisis Tanpa Batas</strong></span></li>
+                                <li class="flex items-start"><span class="text-accent mr-2 mt-1 font-bold">✓</span><span>Akses <strong>Pemutar Spotify</strong></span></li>
                                 <li class="flex items-start"><span class="text-accent mr-2 mt-1 font-bold">✓</span><span><strong>Mode Kreator</strong> (SEO & Alt Text)</span></li>
                                 <li class="flex items-start"><span class="text-accent mr-2 mt-1 font-bold">✓</span><span><strong>Background AI Kustom</strong></span></li>
                                 <li class="flex items-start"><span class="text-accent mr-2 mt-1 font-bold">✓</span><span>Dukungan Prioritas</span></li>
@@ -399,6 +408,7 @@
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+    <script src="https://sdk.scdn.co/spotify-player.js"></script>
     <script type="module" src="index.js"></script>
 </body>
 </html>
