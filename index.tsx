@@ -352,7 +352,7 @@ function handleLogout() {
     currentUser = null;
     updateUserUI(null);
     if (pageRiwayat.style.display !== 'none') {
-        showPage('home');
+        showPage('page-home');
     }
 }
 
@@ -776,25 +776,44 @@ function openSubscriptionModal() { subscriptionModal.classList.remove('hidden');
 function closeSubscriptionModal() { subscriptionModal.classList.add('hidden'); }
 
 function showPage(pageId: string) {
-    document.querySelectorAll('.page-content').forEach(page => (page as HTMLElement).classList.add('hidden'));
+    // Hide all major content containers first
+    mainContentScrollContainer.classList.add('hidden');
+    pageRiwayat.classList.add('hidden');
     
     if (pageId === 'page-riwayat') {
         fetchHistory();
         pageRiwayat.classList.remove('hidden');
-        mainContentScrollContainer.classList.add('hidden');
     } else {
+        // For any other page, assume it's part of the main scroll container
         mainContentScrollContainer.classList.remove('hidden');
-        const targetPage = document.getElementById(pageId.replace('page-', '')) as HTMLElement;
-        if(targetPage) {
-            targetPage.classList.remove('hidden');
-            // If it's the home page, ensure we start at the top
-            if (pageId === 'page-home') {
-                 mainContentScrollContainer.style.display = 'block';
-                 pageRiwayat.classList.add('hidden');
-                 const homeSection = document.getElementById('home');
-                 homeSection?.classList.remove('hidden');
-            }
+        const targetSectionId = pageId.startsWith('page-') ? pageId.substring(5) : pageId;
+        const targetSection = document.getElementById(targetSectionId);
+        if (targetSection) {
+            targetSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
+    }
+}
+
+/**
+ * Handles clicks on all navigation links (desktop and mobile).
+ * @param {Event} e - The click event.
+ */
+function handleNavLinkClick(e: Event) {
+    e.preventDefault();
+    const link = e.currentTarget as HTMLAnchorElement;
+    
+    // For page-switching links like 'Riwayat'
+    const pageId = link.dataset.page;
+    if (pageId) {
+        showPage(pageId);
+        return;
+    }
+
+    // For same-page scrolling links like 'Home', 'About', 'Pricing'
+    const href = link.getAttribute('href');
+    if (href && href.startsWith('#')) {
+        const targetId = href.substring(1);
+        showPage(targetId); // This will show the main container and scroll
     }
 }
 
@@ -988,24 +1007,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     initiatePaymentButton.addEventListener('click', handlePayment);
 
-    // Page navigation
+    // Page navigation (Desktop)
     navLinks.forEach(link => {
-        link.addEventListener('click', (e) => {
-            e.preventDefault();
-            const pageId = link.dataset.page;
-            if (pageId) {
-                showPage(pageId);
-                // For single-page scrolling sections
-                if (['home', 'about', 'harga'].includes(pageId.replace('page-',''))) {
-                    mainContentScrollContainer.style.display = 'block';
-                    pageRiwayat.classList.add('hidden');
-                    const targetSection = document.getElementById(pageId.replace('page-',''));
-                    targetSection?.scrollIntoView({ behavior: 'smooth' });
-                }
-            }
-        });
+        link.addEventListener('click', handleNavLinkClick);
     });
-    historyNavButton.addEventListener('click', (e) => { e.preventDefault(); showPage('page-riwayat'); });
     
     // History modal
     closeHistoryDetailModalButton.addEventListener('click', () => historyDetailModal.classList.add('hidden'));
@@ -1029,7 +1034,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Mobile Menu
     mobileMenuButton.addEventListener('click', () => mobileMenu.classList.remove('hidden'));
     closeMobileMenuButton.addEventListener('click', () => mobileMenu.classList.add('hidden'));
-    mobileNavLinks.forEach(link => link.addEventListener('click', () => mobileMenu.classList.add('hidden')));
+    mobileNavLinks.forEach(link => {
+        link.addEventListener('click', (e) => {
+            mobileMenu.classList.add('hidden');
+            handleNavLinkClick(e);
+        });
+    });
     mobileLoginButton.addEventListener('click', () => {
         mobileMenu.classList.add('hidden');
         openLoginModal();
@@ -1038,11 +1048,6 @@ document.addEventListener('DOMContentLoaded', () => {
         mobileMenu.classList.add('hidden');
         handleLogout();
     });
-    mobileHistoryNavButton.addEventListener('click', (e) => {
-        e.preventDefault();
-        mobileMenu.classList.add('hidden');
-        showPage('page-riwayat');
-    })
 });
 
 // --- Payments ---
