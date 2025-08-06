@@ -19,6 +19,18 @@ declare global {
     }
 }
 
+// Global definition for Spotify's SDK ready callback.
+// This is the entry point for the Spotify SDK.
+window.onSpotifyWebPlaybackSDKReady = () => {
+    console.log("Spotify Web Playback SDK is ready to be initialized.");
+    // The SDK is loaded, but we need an access token to create a player.
+    // The token is processed on DOMContentLoaded. If it's present, initializeSpotifyPlayer will be called.
+    const token = spotifyAccessToken || localStorage.getItem('spotifyAccessToken');
+    if (token) {
+        initializeSpotifyPlayer(token);
+    }
+};
+
 // --- DOM Element Selection ---
 const mainContentScrollContainer = document.getElementById('main-content-scroll-container') as HTMLElement;
 const pageRiwayat = document.getElementById('page-riwayat') as HTMLElement;
@@ -296,10 +308,87 @@ function handleLogout() {
 // --- Spotify SDK Integration ---
 
 /**
- * Initializes the Spotify Web Playback SDK integration.
- * Checks for an access token from the redirect and sets up the player.
+ * Initializes the Spotify Player instance.
+ * This should only be called when a valid token is available.
+ * @param {string} token - The Spotify OAuth Access Token.
  */
-function initializeSpotifyIntegration() {
+function initializeSpotifyPlayer(token: string) {
+    if (spotifyPlayer) {
+        spotifyPlayer.disconnect();
+    }
+    
+    spotifyPlayer = new Spotify.Player({
+        name: 'Celetuk Web Player',
+        getOAuthToken: (cb: (token: string) => void) => {
+            cb(token);
+        },
+        volume: 0.5
+    });
+
+    // Error handling
+    spotifyPlayer.addListener('initialization_error', ({ message }: { message: string }) => { 
+        console.error('Spotify Init Error:', message); 
+        handleSpotifyError();
+    });
+    spotifyPlayer.addListener('authentication_error', ({ message }: { message: string }) => { 
+        console.error('Spotify Auth Error:', message);
+        handleSpotifyError();
+        showError('Sesi Spotify Anda berakhir. Silakan hubungkan kembali.');
+    });
+    spotifyPlayer.addListener('account_error', ({ message }: { message: string }) => { 
+        console.error('Spotify Account Error:', message); 
+        showError('Error akun Spotify. Pastikan Anda menggunakan akun Premium.');
+    });
+    spotifyPlayer.addListener('playback_error', ({ message }: { message: string }) => { console.error('Spotify Playback Error:', message); });
+
+    // Player state changes
+    spotifyPlayer.addListener('player_state_changed', (state: any) => {
+        if (!state) {
+            if (currentPlayingUri) resetAllPlayButtons();
+            return;
+        }
+        if (state.paused && state.track_window.current_track.uri === currentPlayingUri) {
+            resetAllPlayButtons();
+        }
+     });
+
+    // Ready
+    spotifyPlayer.addListener('ready', ({ device_id }: { device_id: string }) => {
+        console.log('Ready with Device ID', device_id);
+        spotifyDeviceId = device_id;
+        updateSpotifyButtonState(true);
+    });
+
+    // Not Ready
+    spotifyPlayer.addListener('not_ready', ({ device_id }: { device_id: string }) => {
+        console.log('Device ID has gone offline', device_id);
+        spotifyDeviceId = null;
+        updateSpotifyButtonState(false);
+    });
+
+    spotifyPlayer.connect().then((success: boolean) => {
+        if (success) console.log('The Spotify Player has connected successfully!');
+    });
+}
+
+/**
+ * Handles common Spotify errors by logging the user out of Spotify integration.
+ */
+function handleSpotifyError() {
+    localStorage.removeItem('spotifyAccessToken');
+    spotifyAccessToken = null;
+    spotifyDeviceId = null;
+    if (spotifyPlayer) {
+        spotifyPlayer.disconnect();
+        spotifyPlayer = null;
+    }
+    updateSpotifyButtonState(false);
+}
+
+/**
+ * Processes the URL for Spotify tokens after a redirect and sets up the player if a token is found.
+ */
+function processAndSetupSpotify() {
     const urlParams = new URLSearchParams(window.location.search);
     const tokenFromUrl = urlParams.get('spotify_access_token');
     const errorFromUrl = urlParams.get('spotify_error');
@@ -310,75 +399,26 @@ function initializeSpotifyIntegration() {
         return;
     }
 
+    let currentToken: string | null = null;
     if (tokenFromUrl) {
+        currentToken = tokenFromUrl;
         spotifyAccessToken = tokenFromUrl;
         localStorage.setItem('spotifyAccessToken', tokenFromUrl);
+        // Clean the URL so the token isn't visible or re-used on refresh
         window.history.replaceState({}, document.title, window.location.pathname);
     } else {
-        spotifyAccessToken = localStorage.getItem('spotifyAccessToken');
+        currentToken = localStorage.getItem('spotifyAccessToken');
+        spotifyAccessToken = currentToken;
     }
 
-    if (spotifyAccessToken) {
-        // The SDK script will call this function once it's loaded
-        window.onSpotifyWebPlaybackSDKReady = () => {
-            if (!spotifyAccessToken) return;
-            spotifyPlayer = new Spotify.Player({
-                name: 'Celetuk Web Player',
-                getOAuthToken: (cb: (token: string) => void) => {
-                    cb(spotifyAccessToken!);
-                },
-                volume: 0.5
-            });
-
-            // Error handling
-            spotifyPlayer.addListener('initialization_error', ({ message }: { message: string }) => { 
-                console.error('Spotify Init Error:', message); 
-                localStorage.removeItem('spotifyAccessToken');
-                spotifyAccessToken = null;
-                updateSpotifyButtonState(false);
-            });
-            spotifyPlayer.addListener('authentication_error', ({ message }: { message: string }) => { 
-                console.error('Spotify Auth Error:', message);
-                localStorage.removeItem('spotifyAccessToken');
-                spotifyAccessToken = null;
-                updateSpotifyButtonState(false);
-                showError('Sesi Spotify Anda berakhir. Silakan hubungkan kembali.');
-            });
-            spotifyPlayer.addListener('account_error', ({ message }: { message: string }) => { 
-                console.error('Spotify Account Error:', message); 
-                showError('Error akun Spotify. Pastikan Anda menggunakan akun Premium.');
-            });
-            spotifyPlayer.addListener('playback_error', ({ message }: { message: string }) => { console.error('Spotify Playback Error:', message); });
-
-            // Player state changes
-            spotifyPlayer.addListener('player_state_changed', (state: any) => {
-                if (!state) {
-                    if (currentPlayingUri) resetAllPlayButtons();
-                    return;
-                }
-                if (state.paused && state.track_window.current_track.uri === currentPlayingUri) {
-                    resetAllPlayButtons();
-                }
-             });
-
-            // Ready
-            spotifyPlayer.addListener('ready', ({ device_id }: { device_id: string }) => {
-                console.log('Ready with Device ID', device_id);
-                spotifyDeviceId = device_id;
-                updateSpotifyButtonState(true);
-            });
-
-            // Not Ready
-            spotifyPlayer.addListener('not_ready', ({ device_id }: { device_id: string }) => {
-                console.log('Device ID has gone offline', device_id);
-                spotifyDeviceId = null;
-                updateSpotifyButtonState(false);
-            });
-
-            spotifyPlayer.connect().then((success: boolean) => {
-                if (success) console.log('The Spotify Player has connected successfully!');
-            });
-        };
+    if (currentToken) {
+        // If we have a token, initialize the player.
+        // This handles cases where this function runs *after* the SDK has already loaded.
+        if (typeof Spotify !== 'undefined' && Spotify.Player) {
+            initializeSpotifyPlayer(currentToken);
+        }
+    } else {
+        updateSpotifyButtonState(false);
     }
 }
 
@@ -988,7 +1028,7 @@ function initAnimations() {
 document.addEventListener('DOMContentLoaded', () => {
     getAppConfig();
     checkLoginStatus();
-    initializeSpotifyIntegration();
+    processAndSetupSpotify();
     initAnimations();
 
     // Persona selection
