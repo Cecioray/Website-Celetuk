@@ -46,11 +46,12 @@ const createTables = async () => {
                 generation_credits INTEGER DEFAULT 5
             );
         `);
-        // Add columns for password reset if they don't exist
+        // Add columns for password reset and credit management if they don't exist
         await client.query(`
             ALTER TABLE users
             ADD COLUMN IF NOT EXISTS reset_password_token TEXT,
-            ADD COLUMN IF NOT EXISTS reset_password_expires BIGINT;
+            ADD COLUMN IF NOT EXISTS reset_password_expires BIGINT,
+            ADD COLUMN IF NOT EXISTS last_credit_reset TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP;
         `);
         await client.query(`
             CREATE TABLE IF NOT EXISTS history (
@@ -320,9 +321,29 @@ app.post('/api/analyze', authenticateToken, async (req, res) => {
 
     try {
         const { base64ImageData, persona, theme } = req.body;
-        const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
-        const user = userResult.rows[0];
+        let userResult = await pool.query('SELECT * FROM users WHERE id = $1', [req.user.id]);
+        let user = userResult.rows[0];
         if (!user) return res.status(404).json({ error: 'User not found.' });
+
+        // --- Daily Credit Reset Logic ---
+        if (!user.is_premium) {
+            const now = new Date();
+            const lastReset = user.last_credit_reset ? new Date(user.last_credit_reset) : new Date(0);
+            
+            // Compare dates without time to see if it's a new day
+            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const lastResetDay = new Date(lastReset.getFullYear(), lastReset.getMonth(), lastReset.getDate());
+
+            if (today > lastResetDay) {
+                userResult = await pool.query(
+                    'UPDATE users SET generation_credits = 5, last_credit_reset = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *',
+                    [user.id]
+                );
+                user = userResult.rows[0]; // Refresh user data with updated credits
+                console.log(`Daily credits for user ${user.id} have been reset.`);
+            }
+        }
+        // --- End of Credit Reset Logic ---
 
         if (!user.is_premium && user.generation_credits <= 0) {
             return res.status(403).json({ error: 'Your free quota has been used up.', quotaExceeded: true });

@@ -55,6 +55,8 @@ const errorMessage = document.getElementById('errorMessage') as HTMLParagraphEle
 const resetButton = document.getElementById('resetButton') as HTMLButtonElement;
 const backFromLoaderButton = document.getElementById('backFromLoaderButton') as HTMLButtonElement;
 const backFromResultsButton = document.getElementById('backFromResultsButton') as HTMLButtonElement;
+const backToPersonaButton = document.getElementById('backToPersonaButton') as HTMLButtonElement;
+const changeImageButton = document.getElementById('changeImageButton') as HTMLButtonElement;
 
 // --- Subscription Modal Selectors ---
 const subscriptionModal = document.getElementById('subscriptionModal') as HTMLElement;
@@ -583,6 +585,7 @@ function selectPersona(persona: 'creator' | 'casual') {
         return;
     }
     userPersona = persona;
+    updateAnalyzeButtonState();
     gsap.to(personaContainer, {
         opacity: 0,
         duration: 0.4,
@@ -607,7 +610,7 @@ function handleFileSelect(event: Event) {
             imagePreview.src = base64ImageData;
             uploadContainer.classList.add('hidden');
             imagePreviewContainer.classList.remove('hidden');
-            analyzeButton.disabled = false;
+            updateAnalyzeButtonState();
         };
         reader.readAsDataURL(file);
     }
@@ -757,23 +760,49 @@ function resetApp() {
     if(currentHtmlAudio) currentHtmlAudio.pause();
     if(spotifyPlayer) spotifyPlayer.pause();
 
-    base64ImageData = null;
-    userPersona = null;
     analysisAbortController?.abort();
 
     resultsContainer.classList.add('hidden');
-    mainAppInterface.classList.add('hidden');
+    returnToPersonaSelection();
+}
+
+/**
+ * Resets the UI from image preview back to the upload prompt.
+ */
+function resetImageSelection() {
+    base64ImageData = null;
+    fileInput.value = '';
+    imagePreview.src = '';
     imagePreviewContainer.classList.add('hidden');
     uploadContainer.classList.remove('hidden');
-    loaderContainer.classList.add('hidden');
-    personaContainer.classList.remove('hidden');
-    
-    fileInput.value = '';
-    themeInput.value = '';
+    updateAnalyzeButtonState();
+}
 
-    gsap.fromTo(personaContainer, { opacity: 0 }, { opacity: 1, duration: 0.5 });
+/**
+ * Transitions the UI back to the persona selection screen.
+ */
+function returnToPersonaSelection() {
+    userPersona = null;
+    resetImageSelection();
     
-    document.querySelectorAll('.btn-persona.selected').forEach(btn => btn.classList.remove('selected'));
+    gsap.to(mainAppInterface, {
+        opacity: 0,
+        duration: 0.4,
+        onComplete: () => {
+            mainAppInterface.classList.add('hidden');
+            personaContainer.classList.remove('hidden');
+            gsap.fromTo(personaContainer, { opacity: 0, y: -20 }, { opacity: 1, y: 0, duration: 0.5 });
+        }
+    });
+
+    personaButtons.forEach(btn => btn.classList.remove('selected'));
+}
+
+/**
+ * Enables or disables the analyze button based on app state.
+ */
+function updateAnalyzeButtonState() {
+    analyzeButton.disabled = !base64ImageData || !userPersona;
 }
 
 /**
@@ -899,7 +928,7 @@ async function fetchHistory() {
         if (!response.ok) throw new Error(history.error || "Gagal memuat riwayat.");
 
         historyGrid.innerHTML = '';
-        if (history.length === 0) {
+        if (Array.isArray(history) && history.length === 0) {
             historyEmptyState.classList.remove('hidden');
             historyGrid.classList.add('hidden');
         } else {
@@ -1044,6 +1073,9 @@ document.addEventListener('DOMContentLoaded', () => {
     fileInput.addEventListener('change', handleFileSelect);
     analyzeButton.addEventListener('click', analyzeImage);
     resetButton.addEventListener('click', resetApp);
+    changeImageButton.addEventListener('click', resetImageSelection);
+    backToPersonaButton.addEventListener('click', returnToPersonaSelection);
+
     backFromLoaderButton.addEventListener('click', () => {
         analysisAbortController?.abort();
         showLoader(false);
