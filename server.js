@@ -200,7 +200,8 @@ async function getAiAnalysis(base64ImageData, persona, theme) {
         -   **HINDARI KERAS FRASA KLISÉ & CRINGE**: Jangan pernah gunakan 'POV', 'main character', 'outfit on point', 'vibe check', "healing", "candu", atau frasa lain yang sudah terlalu umum dan basi. Jadilah orisinal dan segar. Jangan terdengar sombong atau pamer.
     3.  **Hashtags**: Berikan 3 hashtag yang spesifik dan estetik (tanpa tanda #). Hindari hashtag super generik.
     4.  **Lagu**: Berikan 1 rekomendasi lagu yang sedang tren atau sangat cocok dengan mood. Formatnya harus: 'Judul Lagu oleh Nama Artis'.
-    5.  **TEMA (JIKA ADA)**: Jika pengguna memberikan tema "${theme || 'tidak ada'}", gabungkan secara alami dan kreatif ke dalam ide konten.
+    5.  **Chorus Start Time**: Berikan 'chorus_start_time', yaitu perkiraan waktu (dalam detik) di mana bagian reff atau bagian paling viral dari lagu tersebut dimulai. Ini harus berupa ANGKA INTEGER. Jika ragu, berikan estimasi terbaikmu antara 15-45 detik.
+    6.  **TEMA (JIKA ADA)**: Jika pengguna memberikan tema "${theme || 'tidak ada'}", gabungkan secara alami dan kreatif ke dalam ide konten.
 
     FORMAT OUTPUT:
     Kembalikan HANYA dalam format array JSON yang valid dan bersih. Setiap elemen dalam array adalah satu objek ide konten.
@@ -214,7 +215,15 @@ async function getAiAnalysis(base64ImageData, persona, theme) {
                 mood: { type: Type.STRING },
                 caption: { type: Type.STRING },
                 hashtags: { type: Type.ARRAY, items: { type: Type.STRING } },
-                song: { type: Type.OBJECT, properties: { title: { type: Type.STRING }, artist: { type: Type.STRING } } }
+                song: { 
+                    type: Type.OBJECT, 
+                    properties: { 
+                        title: { type: Type.STRING }, 
+                        artist: { type: Type.STRING },
+                        chorus_start_time: { type: Type.INTEGER, description: "The start time of the song's chorus in seconds." }
+                    },
+                    required: ["title", "artist", "chorus_start_time"]
+                }
             },
             required: ["mood", "caption", "hashtags", "song"]
         }
@@ -313,15 +322,19 @@ app.post('/api/analyze', authenticateToken, async (req, res) => {
         let user = userResult.rows[0];
         if (!user) return res.status(404).json({ error: 'User not found.' });
 
+        // Check and reset daily credits IF required
         if (!user.is_premium) {
             const todayUTC = new Date().toISOString().slice(0, 10);
             const lastResetUTC = user.last_credit_reset ? new Date(user.last_credit_reset).toISOString().slice(0, 10) : '1970-01-01';
+            
             if (todayUTC > lastResetUTC) {
+                console.log(`Resetting daily credits for user ${user.email}`);
+                // FIX: Also update last_credit_reset to today
                 userResult = await pool.query(
                     'UPDATE users SET generation_credits = 5, last_credit_reset = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *',
                     [user.id]
                 );
-                user = userResult.rows[0];
+                user = userResult.rows[0]; // Get the updated user data
             }
         }
 
@@ -356,6 +369,7 @@ app.post('/api/analyze', authenticateToken, async (req, res) => {
         }));
         
         if (!user.is_premium) {
+            // Only decrement credits, don't touch the reset date here.
             await pool.query('UPDATE users SET generation_credits = generation_credits - 1 WHERE id = $1', [user.id]);
         }
         

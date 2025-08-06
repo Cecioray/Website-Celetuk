@@ -16,7 +16,7 @@ declare global {
         snap: any;
         copyToClipboard: (text: string, button: HTMLButtonElement) => void;
         onYouTubeIframeAPIReady: () => void;
-        handleYoutubePlay: (button: HTMLButtonElement, videoId: string) => void;
+        handleYoutubePlay: (button: HTMLButtonElement, videoId: string, startTime: number) => void;
     }
 }
 
@@ -58,7 +58,7 @@ function onPlayerStateChange(event: any) {
 }
 
 // Main function to handle playback, attached to window for inline `onclick`
-window.handleYoutubePlay = (button: HTMLButtonElement, videoId: string) => {
+window.handleYoutubePlay = (button: HTMLButtonElement, videoId: string, startTime: number) => {
     if (!ytPlayer || typeof ytPlayer.loadVideoById !== 'function') {
         showError("Pemutar musik belum siap. Coba beberapa saat lagi.");
         return;
@@ -77,8 +77,8 @@ window.handleYoutubePlay = (button: HTMLButtonElement, videoId: string) => {
         return;
     }
 
-    // Otherwise, play the new video.
-    ytPlayer.loadVideoById({ videoId: videoId, startSeconds: PREVIEW_START_TIME_MS / 1000 });
+    // Otherwise, play the new video from the specified start time (chorus).
+    ytPlayer.loadVideoById({ videoId: videoId, startSeconds: startTime });
     ytPlayer.playVideo();
     updatePlayButtonState(button, true);
     activePlayButton = button;
@@ -191,7 +191,6 @@ const playIconSVG = `<svg class="play-icon" xmlns="http://www.w3.org/2000/svg" w
 const pauseIconSVG = `<svg class="pause-icon hidden" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>`;
 
 // --- Audio Preview Timing ---
-const PREVIEW_START_TIME_MS = 7.5 * 1000;
 const PREVIEW_DURATION_MS = 15 * 1000;
 
 // --- State Variables ---
@@ -219,6 +218,7 @@ interface Song {
     album_art_url?: string;
     artist_image_url?: string;
     videoId?: string;
+    chorus_start_time?: number;
 }
 
 interface IdeaResult {
@@ -369,35 +369,31 @@ function updateUserUI(user: User | null) {
         loginNavButton.classList.add('hidden');
         userProfile.classList.remove('hidden');
         userEmailSpan.textContent = user.email;
+        historyNavButton.classList.remove('hidden'); // Show for all logged-in users
+
         if (user.is_premium) {
             userStatusContainer.classList.add('hidden');
-            historyNavButton.classList.remove('hidden');
         } else {
             userStatusContainer.classList.remove('hidden');
             userCredits.textContent = `Sisa credits: ${user.generation_credits}`;
-            historyNavButton.classList.add('hidden');
         }
 
         // Mobile UI
         mobileLoginButton.classList.add('hidden');
         mobileUserProfile.classList.remove('hidden');
         mobileUserEmail.textContent = user.email;
-        if(user.is_premium) {
-            mobileHistoryNavButton.classList.remove('hidden');
-        } else {
-            mobileHistoryNavButton.classList.add('hidden');
-        }
+        mobileHistoryNavButton.classList.remove('hidden'); // Show for all logged-in users
     } else {
         // Desktop UI
         loginNavButton.classList.remove('hidden');
         userProfile.classList.add('hidden');
         userStatusContainer.classList.add('hidden');
-        historyNavButton.classList.add('hidden');
+        historyNavButton.classList.add('hidden'); // Hide for logged-out users
 
         // Mobile UI
         mobileLoginButton.classList.remove('hidden');
         mobileUserProfile.classList.add('hidden');
-        mobileHistoryNavButton.classList.add('hidden');
+        mobileHistoryNavButton.classList.add('hidden'); // Hide for logged-out users
     }
 }
 
@@ -588,12 +584,14 @@ function createIdeaCard(idea: IdeaResult, index: number): HTMLElement {
 
     let musicPlayerHTML: string;
     if (song.videoId) {
+        // Use a default start time of 7 seconds if the AI doesn't provide one.
+        const startTime = song.chorus_start_time || 7;
         musicPlayerHTML = `
             <div class="mt-4 p-3 rounded-lg bg-black bg-opacity-20 flex items-center justify-between space-x-3">
                 <div class="flex items-center flex-grow overflow-hidden">
                     ${playerInfoHTML}
                 </div>
-                <button class="play-pause-btn text-white bg-green-500 rounded-full w-12 h-12 flex items-center justify-center flex-shrink-0 hover:bg-green-600 transition" onclick="window.handleYoutubePlay(this, '${song.videoId}')">
+                <button class="play-pause-btn text-white bg-green-500 rounded-full w-12 h-12 flex items-center justify-center flex-shrink-0 hover:bg-green-600 transition" onclick="window.handleYoutubePlay(this, '${song.videoId}', ${startTime})">
                     ${playIconSVG}
                     ${pauseIconSVG}
                 </button>
