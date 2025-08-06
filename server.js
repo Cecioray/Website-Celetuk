@@ -86,113 +86,40 @@ if (process.env.GEMINI_API_KEY) {
     console.warn('WARNING: GEMINI_API_KEY is not set. AI features will be disabled.');
 }
 
-// --- Spotify API Helpers ---
-let spotifyToken = { value: null, expires: 0 };
-
-const getSpotifyToken = async () => {
-    if (spotifyToken.value && spotifyToken.expires > Date.now()) {
-        return spotifyToken.value;
-    }
-    try {
-        const credentials = Buffer.from(`${process.env.SPOTIFY_CLIENT_ID}:${process.env.SPOTIFY_CLIENT_SECRET}`).toString('base64');
-        const response = await axios.post('https://accounts.spotify.com/api/token', 'grant_type=client_credentials', {
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Authorization': `Basic ${credentials}`
-            }
-        });
-        const tokenData = response.data;
-        spotifyToken = {
-            value: tokenData.access_token,
-            expires: Date.now() + (tokenData.expires_in - 300) * 1000 // Refresh 5 mins before expiry
-        };
-        console.log("New Spotify token obtained.");
-        return spotifyToken.value;
-    } catch (error) {
-        console.error("Error getting Spotify token:", error.response ? error.response.data : error.message);
+// --- YouTube API Helper ---
+async function searchYouTubeVideo(query) {
+    if (!process.env.YOUTUBE_API_KEY) {
+        console.warn("YOUTUBE_API_KEY not set. Skipping YouTube search.");
         return null;
     }
-};
-
-const searchSpotifyTrack = async (title, artist) => {
-    const token = await getSpotifyToken();
-    if (!token) return { title, artist }; // Return original if no token
-
-    // Helper to format track data, including fetching artist image
-    const formatTrackData = async (track) => {
-        if (!track) return null;
-        let artistImageUrl = null;
-        if (track.artists?.[0]?.id) {
-            try {
-                const artistResponse = await axios.get(`https://api.spotify.com/v1/artists/${track.artists[0].id}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                artistImageUrl = artistResponse.data.images?.[0]?.url;
-            } catch {
-                artistImageUrl = null;
-            }
-        }
-        return {
-            title: track.name,
-            artist: track.artists.map(a => a.name).join(', '),
-            preview_url: track.preview_url,
-            album_art_url: track.album.images?.[0]?.url,
-            artist_image_url: artistImageUrl,
-            uri: track.uri,
-        };
-    };
-
-    // Define search queries in order of preference. Sanitize input slightly.
-    const cleanTitle = title.replace(/["']/g, "");
-    const cleanArtist = artist.replace(/["']/g, "");
-
-    const queries = [
-        { q: `track:"${cleanTitle}" artist:"${cleanArtist}"`, limit: 5 },
-        { q: `${cleanTitle} ${cleanArtist}`, limit: 10 }, // General search can be better than title-only
-        { q: `track:"${cleanTitle}"`, limit: 20 }
-    ];
-
-    // Try to find a track with a preview URL by iterating through query strategies
-    for (const query of queries) {
-        try {
-            const response = await axios.get('https://api.spotify.com/v1/search', {
-                params: { q: query.q, type: 'track', limit: query.limit },
-                headers: { 'Authorization': `Bearer ${token}` }
-            });
-
-            const tracks = response.data.tracks.items;
-            const trackWithPreview = tracks.find(t => t.preview_url);
-            
-            if (trackWithPreview) {
-                console.log(`Preview found for "${title} - ${artist}" with query "${query.q}".`);
-                return await formatTrackData(trackWithPreview);
-            }
-        } catch (error) {
-            // Log error but continue to the next query strategy
-            console.error(`Spotify search failed for query "${query.q}":`, error.response ? error.response.data : error.message);
-        }
-    }
-
-    // FALLBACK: If no preview was found after all attempts, get the best possible match *without* a preview
-    console.log(`No preview found for "${title} - ${artist}" after all attempts. Returning best-effort match.`);
     try {
-        const fallbackQuery = `${cleanTitle} ${cleanArtist}`;
-        const response = await axios.get('https://api.spotify.com/v1/search', {
-            params: { q: fallbackQuery, type: 'track', limit: 1 },
-            headers: { 'Authorization': `Bearer ${token}` }
+        const response = await axios.get('https://www.googleapis.com/youtube/v3/search', {
+            params: {
+                part: 'snippet',
+                q: `${query} official audio`, // Search for official audio for better results
+                key: process.env.YOUTUBE_API_KEY,
+                maxResults: 1,
+                type: 'video'
+            }
         });
 
-        if (response.data.tracks.items.length > 0) {
-            return await formatTrackData(response.data.tracks.items[0]);
+        if (response.data.items.length > 0) {
+            return {
+                videoId: response.data.items[0].id.videoId,
+                title: response.data.items[0].snippet.title
+            };
         }
+        console.log(`No YouTube video found for query: ${query}`);
+        return null;
     } catch (error) {
-         console.error(`Spotify fallback search failed for query "${title} ${artist}":`, error.response ? error.response.data : error.message);
+        if (error.response) {
+            console.error("Error searching YouTube:", error.response.data.error ? error.response.data.error.message : "Unknown YouTube API error");
+        } else {
+             console.error("Error searching YouTube:", error.message);
+        }
+        return null;
     }
-
-    // FINAL FALLBACK: If absolutely nothing is found on Spotify
-    console.log(`Could not find "${title} - ${artist}" on Spotify at all.`);
-    return { title, artist }; // Return original AI suggestion
-};
+}
 
 
 // --- AI Helper Function ---
@@ -354,8 +281,10 @@ app.post('/api/analyze', authenticateToken, async (req, res) => {
         
         const enrichedResults = await Promise.all(analysisResults.map(async (idea) => {
             if (idea.song && idea.song.title && idea.song.artist) {
-                const spotifyData = await searchSpotifyTrack(idea.song.title, idea.song.artist);
-                idea.song = { ...idea.song, ...spotifyData };
+                const youtubeData = await searchYouTubeVideo(`${idea.song.title} ${idea.song.artist}`);
+                if (youtubeData) {
+                    idea.song.videoId = youtubeData.videoId;
+                }
             }
             return idea;
         }));
@@ -517,57 +446,6 @@ app.post('/api/history', authenticateToken, async (req, res) => {
     } catch (error) {
         console.error('Error saving history:', error);
         res.status(500).json({ error: 'Failed to save history.' });
-    }
-});
-
-
-// --- SPOTIFY AUTHENTICATION ENDPOINTS ---
-
-// Endpoint to start Spotify login process
-app.get('/api/spotify-login', (req, res) => {
-    const scope = 'streaming user-read-email user-read-private';
-    const redirect_uri = 'https://www.celetuk.site/api/spotify-callback';
-
-    const auth_query_parameters = new URLSearchParams({
-        response_type: 'code',
-        client_id: process.env.SPOTIFY_CLIENT_ID,
-        scope: scope,
-        redirect_uri: redirect_uri
-    });
-    res.redirect('https://accounts.spotify.com/authorize/?' + auth_query_parameters.toString());
-});
-
-// Endpoint to handle callback from Spotify
-app.get('/api/spotify-callback', async (req, res) => {
-    const code = req.query.code;
-    const error = req.query.error;
-
-    if (error) {
-        console.error('Spotify Callback Error:', error);
-        return res.redirect('/?spotify_error=access_denied');
-    }
-
-    const redirect_uri = 'https://www.celetuk.site/api/spotify-callback';
-
-    try {
-        const response = await axios.post('https://accounts.spotify.com/api/token', null, {
-            params: {
-                code: code,
-                redirect_uri: redirect_uri,
-                grant_type: 'authorization_code'
-            },
-            headers: {
-                'Authorization': 'Basic ' + (Buffer.from(process.env.SPOTIFY_CLIENT_ID + ':' + process.env.SPOTIFY_CLIENT_SECRET).toString('base64')),
-                'Content-Type': 'application/x-www-form-urlencoded'
-            }
-        });
-
-        const { access_token } = response.data;
-        res.redirect(`/?spotify_access_token=${access_token}`);
-
-    } catch (err) {
-        console.error('Error getting Spotify token:', err.response ? err.response.data : err.message);
-        res.redirect('/?spotify_error=token_exchange_failed');
     }
 });
 

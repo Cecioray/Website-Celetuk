@@ -8,28 +8,89 @@ export {};
 // --- Type Declarations for CDN Libraries ---
 declare const gsap: any;
 declare const ScrollTrigger: any;
-declare const Spotify: any;
+declare const YT: any;
 
-// TypeScript type augmentation for Midtrans Snap.js & Spotify
+// TypeScript type augmentation
 declare global {
     interface Window {
         snap: any;
         copyToClipboard: (text: string, button: HTMLButtonElement) => void;
-        onSpotifyWebPlaybackSDKReady: () => void;
+        onYouTubeIframeAPIReady: () => void;
+        handleYoutubePlay: (button: HTMLButtonElement, videoId: string) => void;
     }
 }
 
-// Global definition for Spotify's SDK ready callback.
-// This is the entry point for the Spotify SDK.
-window.onSpotifyWebPlaybackSDKReady = () => {
-    console.log("Spotify Web Playback SDK is ready to be initialized.");
-    // The SDK is loaded, but we need an access token to create a player.
-    // The token is processed on DOMContentLoaded. If it's present, initializeSpotifyPlayer will be called.
-    const token = spotifyAccessToken || localStorage.getItem('spotifyAccessToken');
-    if (token) {
-        initializeSpotifyPlayer(token);
-    }
+// --- YouTube Player Logic ---
+
+// Load YouTube IFrame API
+const tag = document.createElement('script');
+tag.src = "https://www.youtube.com/iframe_api";
+const firstScriptTag = document.getElementsByTagName('script')[0];
+firstScriptTag.parentNode!.insertBefore(tag, firstScriptTag);
+
+let ytPlayer: any; // Global variable for the player instance
+let activePlayButton: HTMLButtonElement | null = null;
+let stopTimer: number | null = null;
+
+// This function is called automatically when the YouTube API is ready
+window.onYouTubeIframeAPIReady = () => {
+    ytPlayer = new YT.Player('youtube-player', {
+        height: '1',
+        width: '1',
+        playerVars: { 'playsinline': 1 },
+        events: {
+            'onReady': () => console.log("YouTube Player is ready."),
+            'onStateChange': onPlayerStateChange
+        }
+    });
 };
+
+// Callback for player state changes
+function onPlayerStateChange(event: any) {
+    // When video ends or is paused
+    if (event.data === YT.PlayerState.ENDED || event.data === YT.PlayerState.PAUSED) {
+        if (activePlayButton) {
+            updatePlayButtonState(activePlayButton, false);
+            activePlayButton = null;
+        }
+        if (stopTimer) clearTimeout(stopTimer);
+    }
+}
+
+// Main function to handle playback, attached to window for inline `onclick`
+window.handleYoutubePlay = (button: HTMLButtonElement, videoId: string) => {
+    if (!ytPlayer || typeof ytPlayer.loadVideoById !== 'function') {
+        showError("Pemutar musik belum siap. Coba beberapa saat lagi.");
+        return;
+    }
+    
+    const isPlayingThisVideo = activePlayButton === button;
+
+    // Stop everything first. This helps when switching songs.
+    ytPlayer.pauseVideo();
+    if (stopTimer) clearTimeout(stopTimer);
+    if (activePlayButton) updatePlayButtonState(activePlayButton, false);
+
+    // If we clicked a playing button, we just wanted to stop it. We're done.
+    if (isPlayingThisVideo) {
+        activePlayButton = null;
+        return;
+    }
+
+    // Otherwise, play the new video.
+    ytPlayer.loadVideoById({ videoId: videoId, startSeconds: PREVIEW_START_TIME_MS / 1000 });
+    ytPlayer.playVideo();
+    updatePlayButtonState(button, true);
+    activePlayButton = button;
+
+    // Set a timer to stop playback after the preview duration
+    stopTimer = window.setTimeout(() => {
+        if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
+            ytPlayer.pauseVideo(); // onPlayerStateChange will handle the button reset
+        }
+    }, PREVIEW_DURATION_MS);
+};
+
 
 // --- DOM Element Selection ---
 const mainContentScrollContainer = document.getElementById('main-content-scroll-container') as HTMLElement;
@@ -125,8 +186,7 @@ const mobileUserProfile = document.getElementById('mobileUserProfile') as HTMLEl
 const mobileUserEmail = document.getElementById('mobileUserEmail') as HTMLParagraphElement;
 const mobileLogoutButton = document.getElementById('mobileLogoutButton') as HTMLButtonElement;
 
-// --- Spotify SDK Selectors & Icons ---
-const connectSpotifyButton = document.getElementById('connectSpotifyButton') as HTMLButtonElement;
+// --- Playback Icons ---
 const playIconSVG = `<svg class="play-icon" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>`;
 const pauseIconSVG = `<svg class="pause-icon hidden" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"></path></svg>`;
 
@@ -144,14 +204,6 @@ const API_BASE_URL = ''; // Now served from same origin
 let analysisAbortController: AbortController | null = null;
 let passwordResetToken: string | null = null;
 
-// Spotify SDK State
-let spotifyPlayer: any = null;
-let spotifyDeviceId: string | null = null;
-let spotifyAccessToken: string | null = null;
-let activePlaybackTimeout: number | null = null;
-let currentPlayingUri: string | null = null;
-let currentHtmlAudio: HTMLAudioElement | null = null;
-
 // --- Type Definitions ---
 interface User {
     id: number;
@@ -165,9 +217,8 @@ interface Song {
     title: string;
     artist: string;
     album_art_url?: string;
-    preview_url?: string;
     artist_image_url?: string;
-    uri?: string;
+    videoId?: string;
 }
 
 interface IdeaResult {
@@ -296,218 +347,10 @@ async function handleAuth(event: Event) {
  */
 function handleLogout() {
     localStorage.removeItem('authToken');
-    localStorage.removeItem('spotifyAccessToken');
     currentUser = null;
-    spotifyAccessToken = null;
-    spotifyPlayer = null;
-    spotifyDeviceId = null;
     updateUserUI(null);
     if (pageRiwayat.style.display !== 'none') {
         showPage('home');
-    }
-}
-
-// --- Spotify SDK Integration ---
-
-/**
- * Initializes the Spotify Player instance.
- * This should only be called when a valid token is available.
- * @param {string} token - The Spotify OAuth Access Token.
- */
-function initializeSpotifyPlayer(token: string) {
-    if (spotifyPlayer) {
-        spotifyPlayer.disconnect();
-    }
-    
-    spotifyPlayer = new Spotify.Player({
-        name: 'Celetuk Web Player',
-        getOAuthToken: (cb: (token: string) => void) => {
-            cb(token);
-        },
-        volume: 0.5
-    });
-
-    // Error handling
-    spotifyPlayer.addListener('initialization_error', ({ message }: { message: string }) => { 
-        console.error('Spotify Init Error:', message); 
-        handleSpotifyError();
-    });
-    spotifyPlayer.addListener('authentication_error', ({ message }: { message: string }) => { 
-        console.error('Spotify Auth Error:', message);
-        handleSpotifyError();
-        showError('Sesi Spotify Anda berakhir. Silakan hubungkan kembali.');
-    });
-    spotifyPlayer.addListener('account_error', ({ message }: { message: string }) => { 
-        console.error('Spotify Account Error:', message); 
-        showError('Error akun Spotify. Pastikan Anda menggunakan akun Premium.');
-    });
-    spotifyPlayer.addListener('playback_error', ({ message }: { message: string }) => { console.error('Spotify Playback Error:', message); });
-
-    // Player state changes
-    spotifyPlayer.addListener('player_state_changed', (state: any) => {
-        if (!state) {
-            if (currentPlayingUri) resetAllPlayButtons();
-            return;
-        }
-        if (state.paused && state.track_window.current_track.uri === currentPlayingUri) {
-            resetAllPlayButtons();
-        }
-     });
-
-    // Ready
-    spotifyPlayer.addListener('ready', ({ device_id }: { device_id: string }) => {
-        console.log('Ready with Device ID', device_id);
-        spotifyDeviceId = device_id;
-        updateSpotifyButtonState(true);
-    });
-
-    // Not Ready
-    spotifyPlayer.addListener('not_ready', ({ device_id }: { device_id: string }) => {
-        console.log('Device ID has gone offline', device_id);
-        spotifyDeviceId = null;
-        updateSpotifyButtonState(false);
-    });
-
-    spotifyPlayer.connect().then((success: boolean) => {
-        if (success) console.log('The Spotify Player has connected successfully!');
-    });
-}
-
-/**
- * Handles common Spotify errors by logging the user out of Spotify integration.
- */
-function handleSpotifyError() {
-    localStorage.removeItem('spotifyAccessToken');
-    spotifyAccessToken = null;
-    spotifyDeviceId = null;
-    if (spotifyPlayer) {
-        spotifyPlayer.disconnect();
-        spotifyPlayer = null;
-    }
-    updateSpotifyButtonState(false);
-}
-
-/**
- * Processes the URL for Spotify tokens after a redirect and sets up the player if a token is found.
- */
-function processAndSetupSpotify() {
-    const urlParams = new URLSearchParams(window.location.search);
-    const tokenFromUrl = urlParams.get('spotify_access_token');
-    const errorFromUrl = urlParams.get('spotify_error');
-
-    if (errorFromUrl) {
-        showError(`Gagal menghubungkan ke Spotify: ${errorFromUrl}`);
-        window.history.replaceState({}, document.title, window.location.pathname);
-        return;
-    }
-
-    let currentToken: string | null = null;
-    if (tokenFromUrl) {
-        currentToken = tokenFromUrl;
-        spotifyAccessToken = tokenFromUrl;
-        localStorage.setItem('spotifyAccessToken', tokenFromUrl);
-        // Clean the URL so the token isn't visible or re-used on refresh
-        window.history.replaceState({}, document.title, window.location.pathname);
-    } else {
-        currentToken = localStorage.getItem('spotifyAccessToken');
-        spotifyAccessToken = currentToken;
-    }
-
-    if (currentToken) {
-        // If we have a token, initialize the player.
-        // This handles cases where this function runs *after* the SDK has already loaded.
-        if (typeof Spotify !== 'undefined' && Spotify.Player) {
-            initializeSpotifyPlayer(currentToken);
-        }
-    } else {
-        updateSpotifyButtonState(false);
-    }
-}
-
-/**
- * Updates the 'Connect Spotify' button based on connection status.
- * @param {boolean} isConnected - Whether the Spotify player is connected.
- */
-function updateSpotifyButtonState(isConnected: boolean) {
-    if (connectSpotifyButton) {
-        if(isConnected) {
-            const checkIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="text-green-400" viewBox="0 0 16 16"><path d="M13.854 3.646a.5.5 0 0 1 0 .708l-7 7a.5.5 0 0 1-.708 0l-3.5-3.5a.5.5 0 1 1 .708-.708L6.5 10.293l6.646-6.647a.5.5 0 0 1 .708 0z"/></svg>`;
-            connectSpotifyButton.innerHTML = `${checkIcon} <span>Spotify Terhubung</span>`;
-            connectSpotifyButton.disabled = true;
-            connectSpotifyButton.classList.remove('btn-secondary');
-            connectSpotifyButton.classList.add('cursor-default', 'opacity-80');
-        } else {
-            const spotifyIcon = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" class="text-green-400" viewBox="0 0 16 16"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0m3.669 11.538a.498.498 0 0 1-.686.165c-1.879-1.147-4.243-1.407-7.028-.77a.499.499 0 0 1-.222-.973c3.048-.696 5.662-.397 7.77.892a.5.5 0 0 1 .166.686m.979-2.178a.624.624 0 0 1-.858.205c-2.15-1.321-5.428-1.704-7.972-.932a.625.625 0 0 1-.362-1.194c2.905-.881 6.517-.454 8.986 1.063a.624.624 0 0 1 .206.858m.084-2.268C10.154 5.56 5.9 5.419 3.438 6.166a.748.748 0 1 1-.434-1.437c2.766-.835 7.352-.639 9.609 1.079a.747.747 0 1 1-1.225.825"/></svg>`;
-            connectSpotifyButton.innerHTML = `${spotifyIcon} <span>Hubungkan Spotify</span>`;
-            connectSpotifyButton.disabled = false;
-            connectSpotifyButton.classList.add('btn-secondary');
-            connectSpotifyButton.classList.remove('cursor-default', 'opacity-80');
-        }
-    }
-}
-
-/**
- * Handles toggling playback for a song, deciding between Spotify SDK and HTML5 Audio.
- * @param {Song} song - The song object with URI and preview URL.
- * @param {HTMLButtonElement} buttonEl - The play/pause button that was clicked.
- */
-async function toggleSongPlayback(song: Song, buttonEl: HTMLButtonElement) {
-    const isPlaying = buttonEl.classList.contains('playing');
-    const clickedUri = song.uri;
-
-    // Stop any currently playing audio (both Spotify and HTML5)
-    if (spotifyPlayer && !spotifyPlayer.paused) spotifyPlayer.pause();
-    if (currentHtmlAudio) {
-        currentHtmlAudio.pause();
-        currentHtmlAudio = null;
-    }
-    
-    // Clear any pending pause timeout
-    if (activePlaybackTimeout) clearTimeout(activePlaybackTimeout);
-    
-    // Reset all buttons *before* starting new playback
-    resetAllPlayButtons();
-
-    if (isPlaying) {
-        // If the clicked button was playing, we just stop it. The reset call handles the UI.
-        return;
-    }
-
-    // --- Start new playback ---
-    // Prioritize Spotify SDK if connected and track is available
-    if (spotifyPlayer && spotifyDeviceId && clickedUri && spotifyAccessToken) {
-        try {
-            await fetch(`https://api.spotify.com/v1/me/player/play?device_id=${spotifyDeviceId}`, {
-                method: 'PUT',
-                body: JSON.stringify({ uris: [clickedUri], position_ms: PREVIEW_START_TIME_MS }),
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${spotifyAccessToken}` },
-            });
-            updatePlayButtonState(buttonEl, true);
-            currentPlayingUri = clickedUri;
-            activePlaybackTimeout = window.setTimeout(() => {
-                if (spotifyPlayer) spotifyPlayer.pause();
-                resetAllPlayButtons();
-            }, PREVIEW_DURATION_MS);
-        } catch (error) {
-            console.error('Failed to play via Spotify SDK', error);
-            showError("Gagal memulai pemutaran di Spotify. Coba hubungkan ulang.");
-        }
-    } 
-    // Fallback to HTML5 Audio if preview URL exists
-    else if (song.preview_url) {
-        currentHtmlAudio = new Audio(song.preview_url);
-        currentHtmlAudio.play().catch(e => console.error("Audio playback error:", e));
-        updatePlayButtonState(buttonEl, true);
-        currentPlayingUri = song.preview_url; // Use URL as a unique ID for fallback
-        currentHtmlAudio.addEventListener('ended', resetAllPlayButtons);
-        activePlaybackTimeout = window.setTimeout(() => {
-            if (currentHtmlAudio) currentHtmlAudio.pause();
-            resetAllPlayButtons();
-        }, PREVIEW_DURATION_MS); // Use shorter duration for HTML audio previews
-    } 
-    // No playable source
-    else {
-        showError('Tidak ada preview lagu yang tersedia.');
     }
 }
 
@@ -526,13 +369,10 @@ function updateUserUI(user: User | null) {
         userEmailSpan.textContent = user.email;
         if (user.is_premium) {
             userStatusContainer.classList.add('hidden');
-            connectSpotifyButton.classList.remove('hidden');
-            updateSpotifyButtonState(!!spotifyDeviceId);
             historyNavButton.classList.remove('hidden');
         } else {
             userStatusContainer.classList.remove('hidden');
             userCredits.textContent = `Sisa credits: ${user.generation_credits}`;
-            connectSpotifyButton.classList.add('hidden');
             historyNavButton.classList.add('hidden');
         }
 
@@ -550,7 +390,6 @@ function updateUserUI(user: User | null) {
         loginNavButton.classList.remove('hidden');
         userProfile.classList.add('hidden');
         userStatusContainer.classList.add('hidden');
-        connectSpotifyButton.classList.add('hidden');
         historyNavButton.classList.add('hidden');
 
         // Mobile UI
@@ -717,7 +556,7 @@ function renderResults(results: IdeaResult[]) {
 }
 
 /**
- * Creates a single result card element.
+ * Creates a single result card element with smart music player logic.
  * @param {IdeaResult} idea - The content idea object.
  * @param {number} index - The index of the idea.
  * @returns {HTMLElement} The created slide element.
@@ -727,49 +566,81 @@ function createIdeaCard(idea: IdeaResult, index: number): HTMLElement {
     slide.className = 'slide fade-in';
     slide.style.animationDelay = `${index * 100}ms`;
 
-    const hashtags = idea.hashtags.map(h => `#${h}`).join(' ');
+    const { mood, caption, hashtags, song } = idea;
+    const combinedHashtags = hashtags.map(h => `#${h}`).join(' ');
 
-    slide.innerHTML = `
-        <div class="flex flex-col h-full">
-            <div class="flex justify-between items-center mb-4">
-                <span class="mood-badge">${idea.mood}</span>
-            </div>
-            <div class="flex-grow flex items-center">
-                 <p class="caption-text">${idea.caption}</p>
-            </div>
-             <p class="hashtags text-sm mb-4">${hashtags}</p>
-            <div class="mt-auto pt-4 border-t border-slate-700/50 flex items-center justify-between gap-4">
-                <div class="flex items-center gap-4 overflow-hidden">
-                    <button class="play-pause-btn">
-                        ${playIconSVG}
-                        ${pauseIconSVG}
-                    </button>
-                    <div class="min-w-0">
-                        <p class="font-bold text-white truncate">${idea.song.title}</p>
-                        <p class="text-sm text-text-muted truncate">${idea.song.artist}</p>
-                    </div>
-                </div>
-                <button class="btn-copy">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-                </button>
+    // Use dynamic placeholders for missing images
+    const albumArt = song.album_art_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(song.title)}&background=1f2937&color=e5e7eb&size=128&font-size=0.33`;
+    const artistImage = song.artist_image_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(song.artist.substring(0, 1))}&background=4b5563&color=e5e7eb&size=40&rounded=true`;
+
+    const playerInfoHTML = `
+        <img src="${albumArt}" alt="Album Art" class="w-14 h-14 rounded-md object-cover flex-shrink-0" crossorigin="anonymous">
+        <div class="flex-grow text-left overflow-hidden pl-3">
+            <p class="font-bold text-white truncate leading-tight">${song.title}</p>
+            <div class="flex items-center space-x-2 mt-1">
+                <img src="${artistImage}" alt="${song.artist}" class="w-5 h-5 rounded-full object-cover">
+                <p class="text-sm text-slate-400 truncate">${song.artist}</p>
             </div>
         </div>
     `;
 
-    const copyButton = slide.querySelector('.btn-copy') as HTMLButtonElement;
-    copyButton.addEventListener('click', () => {
-        const textToCopy = `${idea.caption}\n\n${hashtags}\n\nSong suggestion: ${idea.song.title} by ${idea.song.artist}`;
-        window.copyToClipboard(textToCopy, copyButton);
-    });
-
-    const playPauseBtn = slide.querySelector('.play-pause-btn') as HTMLButtonElement;
-    playPauseBtn.addEventListener('click', () => toggleSongPlayback(idea.song, playPauseBtn));
-    
-    if(!idea.song.uri && !idea.song.preview_url) {
-        playPauseBtn.disabled = true;
-        playPauseBtn.style.opacity = '0.5';
-        playPauseBtn.style.cursor = 'not-allowed';
+    let musicPlayerHTML: string;
+    if (song.videoId) {
+        musicPlayerHTML = `
+            <div class="mt-4 p-3 rounded-lg bg-black bg-opacity-20 flex items-center justify-between space-x-3">
+                <div class="flex items-center flex-grow overflow-hidden">
+                    ${playerInfoHTML}
+                </div>
+                <button class="play-pause-btn text-white bg-green-500 rounded-full w-12 h-12 flex items-center justify-center flex-shrink-0 hover:bg-green-600 transition" onclick="window.handleYoutubePlay(this, '${song.videoId}')">
+                    ${playIconSVG}
+                    ${pauseIconSVG}
+                </button>
+            </div>
+        `;
+    } else {
+        const searchQuery = encodeURIComponent(`${song.title} ${song.artist}`);
+        const youtubeLink = `https://www.youtube.com/results?search_query=${searchQuery}`;
+        musicPlayerHTML = `
+            <div class="mt-4 p-3 rounded-lg bg-black bg-opacity-20 flex items-center justify-between space-x-3">
+                <div class="flex items-center flex-grow overflow-hidden">
+                    ${playerInfoHTML}
+                </div>
+                <a href="${youtubeLink}" target="_blank" title="Pratinjau tidak tersedia. Cari di YouTube." class="text-white bg-slate-600 rounded-full w-12 h-12 flex items-center justify-center flex-shrink-0 hover:bg-slate-700 transition no-underline">
+                    <svg class="play-icon opacity-50" xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"></path></svg>
+                </a>
+            </div>
+        `;
     }
+    
+    const copyButtonSVG = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>`;
+
+    // This structure preserves the vertical centering of the caption while pushing the player to the bottom.
+    slide.innerHTML = `
+        <div class="flex flex-col h-full text-left">
+            <div class="flex justify-between items-center mb-4">
+                <span class="mood-badge">${mood}</span>
+                <button class="btn-copy">${copyButtonSVG}</button>
+            </div>
+            <div class="flex-grow flex items-center">
+                 <p class="caption-text w-full">“${caption}”</p>
+            </div>
+             <p class="hashtags text-sm mb-4">${combinedHashtags}</p>
+            <div class="mt-auto">
+                ${musicPlayerHTML}
+            </div>
+        </div>
+    `;
+
+    // Re-attach event listeners
+    const copyButton = slide.querySelector('.btn-copy') as HTMLButtonElement;
+    if (copyButton) {
+        const textToCopy = `“${caption}”\n\n${combinedHashtags}\n\nSong suggestion: ${song.title} by ${song.artist}`;
+        copyButton.addEventListener('click', () => {
+            window.copyToClipboard(textToCopy, copyButton);
+        });
+    }
+
+    // The play/pause listener is now handled by the inline `onclick` attribute.
 
     return slide;
 }
@@ -778,12 +649,10 @@ function createIdeaCard(idea: IdeaResult, index: number): HTMLElement {
  * Resets the application state to the initial persona selection screen.
  */
 function resetApp() {
-    resetAllPlayButtons();
-    if(currentHtmlAudio) currentHtmlAudio.pause();
-    if(spotifyPlayer) spotifyPlayer.pause();
-
+    if (ytPlayer && typeof ytPlayer.pauseVideo === 'function') {
+        ytPlayer.pauseVideo();
+    }
     analysisAbortController?.abort();
-
     resultsContainer.classList.add('hidden');
     returnToPersonaSelection();
 }
@@ -875,11 +744,6 @@ function resetAllPlayButtons() {
     document.querySelectorAll('.play-pause-btn').forEach(btn => {
         updatePlayButtonState(btn as HTMLButtonElement, false);
     });
-    currentPlayingUri = null;
-    if (activePlaybackTimeout) {
-        clearTimeout(activePlaybackTimeout);
-        activePlaybackTimeout = null;
-    }
 }
 
 /**
@@ -1079,7 +943,6 @@ function initAnimations() {
 document.addEventListener('DOMContentLoaded', () => {
     getAppConfig();
     checkLoginStatus();
-    processAndSetupSpotify();
     initAnimations();
 
     // Persona selection
@@ -1145,11 +1008,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
     historyNavButton.addEventListener('click', (e) => { e.preventDefault(); showPage('page-riwayat'); });
-
-    // Spotify connect button
-    connectSpotifyButton.addEventListener('click', () => {
-        window.location.href = '/api/spotify-login';
-    });
     
     // History modal
     closeHistoryDetailModalButton.addEventListener('click', () => historyDetailModal.classList.add('hidden'));
