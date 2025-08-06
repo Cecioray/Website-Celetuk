@@ -108,7 +108,7 @@
                         <div id="userStatusContainer" class="hidden text-right -mb-4 -mt-2 pr-2">
                             <p id="userCredits" class="text-sm text-text-muted"></p>
                         </div>
-                         <!-- This container holds both persona selection and the main app interface -->
+                         <!-- This container holds persona selection and the main app interface -->
                         <div id="appContainer" class="w-full">
                             <!-- Persona Selection -->
                             <div id="personaContainer" class="space-y-4 fade-in max-w-2xl mx-auto">
@@ -171,38 +171,39 @@
                                     </div>
                                 </div>
                                 
-                                 <!-- Loading Indicator -->
-                                <div id="loaderContainer" class="hidden flex flex-col items-center justify-center space-y-4 pt-10">
-                                    <div class="loader"></div>
-                                    <p id="loaderText" class="text-text-muted mt-4 tracking-widest">MENGANALISIS...</p>
-                                    <button id="backFromLoaderButton" class="btn-secondary mt-6">Kembali</button>
-                                </div>
-                                
                                 <!-- Error Message -->
                                 <div id="errorContainer" class="hidden bg-red-900/50 border border-red-500 text-red-300 px-4 py-3 rounded-lg text-center">
                                     <p id="errorMessage"></p>
                                 </div>
-                                 <!-- Results -->
-                                <div id="resultsContainer" class="hidden space-y-6 pt-4 w-full">
-                                    <h3 class="text-2xl font-bold text-slate-100 text-center">Berikut Ide Konten Untukmu:</h3>
-                                    <!-- Slider for results -->
-                                    <div class="slider-container relative w-full max-w-2xl mx-auto">
-                                        <div class="slider-wrapper flex transition-transform duration-500 ease-in-out">
-                                            <!-- Slides will be injected here by JS -->
-                                        </div>
-                                        <button id="prev-slide" class="slider-nav left-0">&lt;</button>
-                                        <button id="next-slide" class="slider-nav right-0">&gt;</button>
+                            </div>
+                            
+                            <!-- Loading Indicator (Moved outside mainAppInterface) -->
+                            <div id="loaderContainer" class="hidden flex flex-col items-center justify-center space-y-4 pt-10">
+                                <div class="loader"></div>
+                                <p id="loaderText" class="text-text-muted mt-4 tracking-widest">MENGANALISIS...</p>
+                                <button id="backFromLoaderButton" class="btn-secondary mt-6">Kembali</button>
+                            </div>
+                            
+                             <!-- Results (Moved outside mainAppInterface) -->
+                            <div id="resultsContainer" class="hidden space-y-6 pt-4 w-full">
+                                <h3 class="text-2xl font-bold text-slate-100 text-center">Berikut Ide Konten Untukmu:</h3>
+                                <!-- Slider for results -->
+                                <div class="slider-container relative w-full max-w-2xl mx-auto">
+                                    <div class="slider-wrapper flex transition-transform duration-500 ease-in-out">
+                                        <!-- Slides will be injected here by JS -->
                                     </div>
-                                    
-                                    <!-- Action Buttons -->
-                                    <div class="flex flex-col-reverse sm:flex-row justify-center items-center gap-4 mt-2">
-                                        <button id="backFromResultsButton" class="btn-secondary w-full sm:w-auto">
-                                            Kembali
-                                        </button>
-                                        <button id="resetButton" class="btn-primary w-full sm:w-auto">
-                                            Coba Foto Lain
-                                        </button>
-                                    </div>
+                                    <button id="prev-slide" class="slider-nav left-0">&lt;</button>
+                                    <button id="next-slide" class="slider-nav right-0">&gt;</button>
+                                </div>
+                                
+                                <!-- Action Buttons -->
+                                <div class="flex flex-col-reverse sm:flex-row justify-center items-center gap-4 mt-2">
+                                    <button id="backFromResultsButton" class="btn-secondary w-full sm:w-auto">
+                                        Kembali
+                                    </button>
+                                    <button id="resetButton" class="btn-primary w-full sm:w-auto">
+                                        Coba Foto Lain
+                                    </button>
                                 </div>
                             </div>
                         </div>

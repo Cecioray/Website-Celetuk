@@ -622,9 +622,9 @@ function handleFileSelect(event: Event) {
 async function analyzeImage() {
     if (!base64ImageData || !userPersona) return;
     analysisAbortController = new AbortController();
-    
+
     showLoader(true, 'Menganalisis fotomu...');
-    
+
     try {
         const response = await fetchWithAuth(`${API_BASE_URL}/api/analyze`, {
             method: 'POST',
@@ -636,33 +636,49 @@ async function analyzeImage() {
             signal: analysisAbortController.signal,
         });
 
+        if (!response.ok) {
+            let errorData = { error: 'Terjadi kesalahan pada server.', quotaExceeded: false };
+            try {
+                // Try to parse the error response, but don't fail if it's not JSON
+                errorData = await response.json();
+            } catch (e) {
+                console.error("Failed to parse error response as JSON:", e);
+            }
+
+            if (errorData.quotaExceeded) {
+                showLoader(false); // Hide loader first
+                mainAppInterface.classList.remove('hidden'); // Restore the main UI
+                openSubscriptionModal(); // Show the modal on top
+            } else {
+                // For other errors, throw to be handled by the catch block
+                throw new Error(errorData.error || 'Terjadi kesalahan saat analisis.');
+            }
+            // IMPORTANT: Stop execution here since we handled the error response
+            return; 
+        }
+
         const data = await response.json();
 
-        if (!response.ok) {
-            if(data.quotaExceeded) {
-                openSubscriptionModal();
-                showLoader(false);
-            } else {
-                throw new Error(data.error || 'Terjadi kesalahan saat analisis.');
-            }
-        } else {
-            // Defensive check for valid, non-empty results
-            if (!data.analysis || !Array.isArray(data.analysis) || data.analysis.length === 0) {
-                throw new Error('AI tidak memberikan hasil yang valid. Coba lagi dengan foto atau tema yang berbeda.');
-            }
-            if (currentUser?.is_premium) {
-                saveToHistory(base64ImageData, data.analysis, userPersona);
-            }
-            renderResults(data.analysis);
-            await checkLoginStatus(); // Re-check to get updated credits
+        // Defensive check for valid, non-empty results from the AI
+        if (!data.analysis || !Array.isArray(data.analysis) || data.analysis.length === 0) {
+            throw new Error('AI tidak memberikan hasil yang valid. Coba lagi dengan foto atau tema yang berbeda.');
         }
+
+        if (currentUser?.is_premium) {
+            await saveToHistory(base64ImageData, data.analysis, userPersona);
+        }
+
+        renderResults(data.analysis);
+        await checkLoginStatus(); // Re-check to get updated credits
+
     } catch (error: any) {
         if (error.name !== 'AbortError') {
-             console.error("Analysis failed:", error);
-             showError(error.message || 'Terjadi kesalahan tak terduga.');
-             showLoader(false);
-             // Restore the main interface on error so user is not stuck
-             mainAppInterface.classList.remove('hidden');
+            console.error("Analysis failed:", error);
+            showError(error.message || 'Terjadi kesalahan tak terduga.');
+            // Ensure a clean state on error: hide loader, hide results, show main UI
+            showLoader(false);
+            resultsContainer.classList.add('hidden');
+            mainAppInterface.classList.remove('hidden');
         }
     }
 }
