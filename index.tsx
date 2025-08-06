@@ -646,6 +646,10 @@ async function analyzeImage() {
                 throw new Error(data.error || 'Terjadi kesalahan saat analisis.');
             }
         } else {
+            // Defensive check for valid, non-empty results
+            if (!data.analysis || !Array.isArray(data.analysis) || data.analysis.length === 0) {
+                throw new Error('AI tidak memberikan hasil yang valid. Coba lagi dengan foto atau tema yang berbeda.');
+            }
             if (currentUser?.is_premium) {
                 saveToHistory(base64ImageData, data.analysis, userPersona);
             }
@@ -655,8 +659,10 @@ async function analyzeImage() {
     } catch (error: any) {
         if (error.name !== 'AbortError') {
              console.error("Analysis failed:", error);
-             showError(error.message);
+             showError(error.message || 'Terjadi kesalahan tak terduga.');
              showLoader(false);
+             // Restore the main interface on error so user is not stuck
+             mainAppInterface.classList.remove('hidden');
         }
     }
 }
