@@ -252,16 +252,16 @@ app.post('/api/analyze', authenticateToken, async (req, res) => {
         let user = userResult.rows[0];
         if (!user) return res.status(404).json({ error: 'User not found.' });
 
-        // --- Daily Credit Reset Logic ---
+        // --- ROBUST Daily Credit Reset Logic ---
         if (!user.is_premium) {
-            const now = new Date();
-            const lastReset = user.last_credit_reset ? new Date(user.last_credit_reset) : new Date(0);
-            
-            // Compare dates without time to see if it's a new day
-            const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-            const lastResetDay = new Date(lastReset.getFullYear(), lastReset.getMonth(), lastReset.getDate());
+            // Get today's date and last reset date as YYYY-MM-DD strings in UTC.
+            // This avoids timezone issues by using a standardized format for comparison.
+            const todayUTC = new Date().toISOString().slice(0, 10); 
+            const lastResetUTC = user.last_credit_reset 
+                ? new Date(user.last_credit_reset).toISOString().slice(0, 10) 
+                : '1970-01-01'; // Default for new users
 
-            if (today > lastResetDay) {
+            if (todayUTC > lastResetUTC) {
                 userResult = await pool.query(
                     'UPDATE users SET generation_credits = 5, last_credit_reset = CURRENT_TIMESTAMP WHERE id = $1 RETURNING *',
                     [user.id]
